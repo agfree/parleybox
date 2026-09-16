@@ -4,6 +4,9 @@ A from-scratch recreation of [PirateBox](https://en.wikipedia.org/wiki/PirateBox
 a small computer that broadcasts an **open Wi-Fi network with no internet**, where
 anyone in range can anonymously share files, chat, and leave messages on a board.
 
+The vocabulary is nautical: visitors come **aboard**, files are **cargo**, sharing one
+is a **parley**, and the captain runs the ship from the **Quarterdeck**.
+
 The original project (David Darts, 2011; maintained by Matthias Strubel until 2019)
 was shut down as routers locked their firmware and browsers forced HTTPS.
 This is a clean reimplementation of the same idea for hardware you can still buy:
@@ -27,12 +30,15 @@ a Raspberry Pi (or any Debian box) with a Wi-Fi adapter that supports AP mode.
 - **Open access point** with DHCP and a DNS server that answers every name with the box.
 - **Captive portal** using the connectivity probes of Android, iOS/macOS, Windows,
   Firefox and NetworkManager, plus the RFC 8910 DHCP option, so phones pop the portal automatically.
-- **File sharing**: browse and download the shared folder, with HTTP range support so videos seek.
-- **Uploads**: streamed straight to disk with a progress bar, size limits, filename sanitizing,
+- **Cargo hold** (`/cargo/`): browse and download the shared folder, with HTTP range support so videos seek.
+- **Parley** (uploads): streamed straight to disk with a progress bar, size limits, filename sanitizing,
   and no memory blow-up on a 512 MB Pi.
 - **Chat / shoutbox**: anonymous, long-polling, survives reboots.
 - **Message board**: anonymous threads and replies with optional image attachments.
-- **Visitor counter**: how many people are aboard now and how many have ever visited.
+- **Aboard counter**: how many people are aboard now and how many have ever come aboard.
+- **Quarterdeck** (`/quarterdeck`): the captain's page. Throw cargo overboard, delete chat
+  messages or board posts, switch uploads/chat/board on and off, rename the ship and edit the
+  message of the day, all from a phone. Off and hidden until `quarterdeck_password` is set.
 - **Zero dependencies**: Python 3.11+ standard library only. No pip, no database, no CDN,
   no JavaScript frameworks. Everything is served from the box.
 - Hardened a little: user content is served with `Content-Security-Policy: sandbox`,
@@ -77,14 +83,23 @@ sudo ./uninstall.sh [--purge]                                           # remove
 
 Edit `/etc/parleybox/parleybox.conf` (see `etc/parleybox.conf` for every key) and
 `sudo systemctl restart parleybox`. You can rename the box, change the message of the day,
-disable uploads, chat or the board, cap upload size, and set the portal hostname.
-Wi-Fi settings live in `/etc/parleybox/hostapd.conf` and `dnsmasq.conf`.
+disable uploads, chat or the board, cap upload size, set the portal hostname, and set the
+Quarterdeck password. Wi-Fi settings live in `/etc/parleybox/hostapd.conf` and `dnsmasq.conf`.
+
+Settings changed on the Quarterdeck are saved to `/srv/parleybox/data/quarterdeck.json`
+and override the config file. Delete that file to go back to the config file's values.
+
+### About the Quarterdeck password
+
+The box speaks plain `http` over an open Wi-Fi network, so the password travels in the clear
+and anyone sniffing the air could grab it. Treat it as a latch, not a lock: use a throwaway
+password, and keep anything you truly care about off the box.
 
 ## Run it anywhere (dev mode)
 
 ```sh
 python3 -m parleybox --dev            # http://localhost:8080/, ./share and ./data
-python3 -m unittest discover -s tests # 27 tests, no extra packages
+python3 -m unittest discover -s tests # no extra packages needed
 ```
 
 Dev mode skips the captive-portal host check so `localhost` works.

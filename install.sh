@@ -68,9 +68,9 @@ install -m 644 "$SRC/etc/parleybox.service" /etc/systemd/system/parleybox.servic
 install -m 644 "$SRC/etc/parleybox.target" /etc/systemd/system/parleybox.target
 if [ ! -e "$SRV/share/README.txt" ]; then
   cat > "$SRV/share/README.txt" <<TXT
-This is the shared folder of a ParleyBox.
+This is the cargo hold of a ParleyBox.
 Anything placed here can be downloaded by anyone connected to the Wi-Fi.
-Uploads from visitors land in uploads/.
+Cargo brought aboard by visitors lands in uploads/.
 TXT
   chown parleybox:parleybox "$SRV/share/README.txt"
 fi
@@ -130,7 +130,7 @@ systemctl --no-pager --lines=0 status parleybox.service parleybox-hostapd.servic
 echo
 say "Done."
 echo "  Shared files:  $SRV/share   (uploads in $SRV/share/uploads)"
-echo "  Config:        $ETC/parleybox.conf"
+echo "  Config:        $ETC/parleybox.conf   (set quarterdeck_password to enable the admin page)"
 echo "  Logs:          journalctl -u parleybox -u parleybox-hostapd -u parleybox-dnsmasq -f"
 if [ $NETWORK -eq 1 ]; then
   echo "  Wi-Fi:         '$SSID' (open)  ->  http://$HOSTNAME_PORTAL/  or  http://$IP/"

@@ -8,7 +8,7 @@
     if (!window.FormData || !window.XMLHttpRequest) return; // plain form fallback
     ev.preventDefault();
     var files = form.querySelector('input[type=file]').files;
-    if (!files || !files.length) { status.textContent = 'Pick a file first.'; return; }
+    if (!files || !files.length) { status.textContent = 'Pick some cargo first.'; return; }
     var xhr = new XMLHttpRequest();
     xhr.open('POST', form.action, true);
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
@@ -25,15 +25,15 @@
       if (xhr.status === 200) {
         try {
           var r = JSON.parse(xhr.responseText);
-          status.textContent = 'Uploaded: ' + r.saved.join(', ');
-        } catch (e) { status.textContent = 'Uploaded.'; }
+          status.textContent = 'Cargo stowed: ' + r.saved.join(', ');
+        } catch (e) { status.textContent = 'Cargo stowed.'; }
         form.reset();
         setTimeout(function () { window.location.reload(); }, 1200);
       } else {
-        status.textContent = 'Upload failed: ' + xhr.responseText;
+        status.textContent = 'Parley failed: ' + xhr.responseText;
       }
     };
-    xhr.onerror = function () { btn.disabled = false; status.textContent = 'Upload failed (network).'; };
+    xhr.onerror = function () { btn.disabled = false; status.textContent = 'Parley failed (network).'; };
     xhr.send(new FormData(form));
   });
 })();

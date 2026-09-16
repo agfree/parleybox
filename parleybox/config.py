@@ -32,6 +32,8 @@ class Config:
     motd: str = DEFAULT_MOTD
     captive_portal: bool = True
     extra_hosts: list = field(default_factory=list)
+    # Admin page ("Quarterdeck"). Empty password = disabled and hidden.
+    quarterdeck_password: str = ""
 
     @property
     def share_path(self) -> Path:

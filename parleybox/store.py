@@ -76,6 +76,28 @@ class ChatStore:
         with self._cond:
             return list(self._msgs)[-n:]
 
+    def _rewrite(self) -> None:
+        _atomic_write(self.path, "".join(json.dumps(m, ensure_ascii=False) + "\n" for m in self._msgs))
+
+    def delete(self, msg_id: int) -> bool:
+        with self._cond:
+            keep = [m for m in self._msgs if m["id"] != msg_id]
+            if len(keep) == len(self._msgs):
+                return False
+            self._msgs.clear()
+            self._msgs.extend(keep)
+            self._rewrite()
+            return True
+
+    def clear(self) -> None:
+        with self._cond:
+            self._msgs.clear()
+            self._rewrite()
+
+    def count(self) -> int:
+        with self._cond:
+            return len(self._msgs)
+
     def last_id(self) -> int:
         with self._cond:
             return self._msgs[-1]["id"] if self._msgs else 0
@@ -146,6 +168,13 @@ class BoardStore:
                     return p
         return None
 
+    def _unlink_image(self, p: dict) -> None:
+        if p.get("image"):
+            try:
+                (self.image_dir / p["image"]).unlink()
+            except OSError:
+                pass
+
     def _prune(self) -> None:
         if len(self._data["threads"]) <= self.max_threads:
             return
@@ -154,11 +183,42 @@ class BoardStore:
         self._data["threads"] = self._data["threads"][len(dead):]
         for t in dead:
             for p in t["posts"]:
-                if p.get("image"):
-                    try:
-                        (self.image_dir / p["image"]).unlink()
-                    except OSError:
-                        pass
+                self._unlink_image(p)
+
+    def delete_thread(self, thread_id: int) -> bool:
+        with self._lock:
+            for i, t in enumerate(self._data["threads"]):
+                if t["id"] == thread_id:
+                    for p in t["posts"]:
+                        self._unlink_image(p)
+                    del self._data["threads"][i]
+                    self._save()
+                    return True
+        return False
+
+    def delete_post(self, thread_id: int, post_id: int) -> bool:
+        """Delete one reply. Deleting the opening post deletes the thread."""
+        with self._lock:
+            for i, t in enumerate(self._data["threads"]):
+                if t["id"] != thread_id:
+                    continue
+                if t["posts"] and t["posts"][0]["id"] == post_id:
+                    for p in t["posts"]:
+                        self._unlink_image(p)
+                    del self._data["threads"][i]
+                    self._save()
+                    return True
+                for j, p in enumerate(t["posts"]):
+                    if p["id"] == post_id:
+                        self._unlink_image(p)
+                        del t["posts"][j]
+                        self._save()
+                        return True
+        return False
+
+    def count(self) -> tuple:
+        with self._lock:
+            return len(self._data["threads"]), sum(len(t["posts"]) for t in self._data["threads"])
 
 
 class VisitorStore:

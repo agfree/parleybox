@@ -1,12 +1,13 @@
 """HTTP server: routing, captive-portal handling, file serving, uploads."""
 
+import base64
+import hmac
 import json
 import logging
 import mimetypes
 import os
 import secrets
 import shutil
-import sys
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -56,6 +57,81 @@ class App:
         self.visitors = VisitorStore(cfg.data_path / "visitors.json")
         self.allowed_hosts = {cfg.hostname.lower(), "localhost", *[h.lower() for h in cfg.extra_hosts]}
         self.portal_url = f"http://{cfg.hostname}/"
+        self.started = time.time()
+        self.secret = secrets.token_bytes(32)
+        self.overrides_path = cfg.data_path / "quarterdeck.json"
+        self._apply_overrides()
+
+    # -- quarterdeck ------------------------------------------------------
+    OVERRIDABLE = ("uploads_enabled", "chat_enabled", "board_enabled", "site_name", "motd")
+
+    def _apply_overrides(self) -> None:
+        """Runtime settings changed from the Quarterdeck persist in the data dir,
+        because /etc is read-only for the service (ProtectSystem=strict)."""
+        if not self.overrides_path.exists():
+            return
+        try:
+            d = json.loads(self.overrides_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return
+        for k in self.OVERRIDABLE:
+            if k in d:
+                setattr(self.cfg, k, d[k])
+
+    def save_overrides(self, values: dict) -> None:
+        d = {k: values[k] for k in self.OVERRIDABLE if k in values}
+        for k, v in d.items():
+            setattr(self.cfg, k, v)
+        tmp = self.overrides_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.overrides_path)
+
+    def csrf_token(self) -> str:
+        return hmac.new(self.secret, b"quarterdeck", "sha256").hexdigest()[:32]
+
+    def check_password(self, authorization: str | None) -> bool:
+        if not self.cfg.quarterdeck_password or not authorization:
+            return False
+        scheme, _, cred = authorization.partition(" ")
+        if scheme.lower() != "basic":
+            return False
+        try:
+            user_pass = base64.b64decode(cred.strip(), validate=True).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        _, _, password = user_pass.partition(":")
+        return hmac.compare_digest(password.encode(), self.cfg.quarterdeck_password.encode())
+
+    def cargo_index(self, limit: int = 300) -> tuple:
+        """Flat list of every file in the hold, newest first."""
+        root = self.cfg.share_path
+        items = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            for fn in filenames:
+                if fn.startswith(".") or fn.endswith(".part"):
+                    continue
+                fp = Path(dirpath) / fn
+                try:
+                    st = fp.stat()
+                except OSError:
+                    continue
+                items.append({"rel": str(fp.relative_to(root)), "size": st.st_size, "mtime": st.st_mtime})
+        items.sort(key=lambda e: e["mtime"], reverse=True)
+        return items[:limit], len(items)
+
+    def info(self) -> dict:
+        cargo, total = self.cargo_index(limit=10**9)
+        usage = shutil.disk_usage(self.cfg.share_path)
+        up = int(time.time() - self.started)
+        d, h, m = up // 86400, (up % 86400) // 3600, (up % 3600) // 60
+        threads, posts = self.board.count()
+        return {
+            "cargo_count": total, "cargo_bytes": sum(e["size"] for e in cargo),
+            "disk": {"total": usage.total, "free": usage.free},
+            "chat_count": self.chat.count(), "threads": threads, "posts": posts,
+            "uptime": f"{d}d {h}h {m}m" if d else f"{h}h {m}m",
+        }
 
     def host_ok(self, host: str) -> bool:
         if self.dev or not self.cfg.captive_portal:
@@ -149,10 +225,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_html(pages.home(self.cfg, self._stats(), q.get("msg", "")))
             elif path.startswith("/static/"):
                 self.serve_file(STATIC_DIR, path[len("/static/"):], cache=True)
-            elif path == "/files":
-                self.redirect("/files/", 301)
-            elif path.startswith("/files/"):
-                self.serve_share(path[len("/files/"):], q)
+            elif path == "/cargo":
+                self.redirect("/cargo/", 301)
+            elif path.startswith("/cargo/"):
+                self.serve_share(path[len("/cargo/"):], q)
+            elif path == "/files" or path.startswith("/files/"):
+                self.redirect("/cargo/" + quote(path[len("/files/"):]), 301)
+            elif path == "/quarterdeck":
+                self.serve_quarterdeck(q)
             elif path == "/chat" and self.cfg.chat_enabled:
                 self.send_html(pages.chat_page(self.cfg, self.app.chat.recent(200), self._stats()))
             elif path == "/api/chat" and self.cfg.chat_enabled:
@@ -189,8 +269,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.app.visitors.hit(self._client_ip())
         try:
-            if path == "/upload":
+            if path in ("/parley", "/upload"):
                 self.handle_upload()
+            elif path.startswith("/quarterdeck/"):
+                self.handle_quarterdeck(path[len("/quarterdeck/"):])
             elif path == "/api/chat" and self.cfg.chat_enabled:
                 self.handle_chat_post()
             elif path == "/board" and self.cfg.board_enabled:
@@ -227,7 +309,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if target.is_dir():
             if not rel.endswith("/") and rel:
-                self.redirect("/files/" + quote(rel) + "/", 301)
+                self.redirect("/cargo/" + quote(rel) + "/", 301)
                 return
             entries = []
             try:
@@ -244,7 +326,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.error(403, "Not allowed.")
                 return
             entries.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
-            self.send_html(pages.file_listing(self.cfg, rel.strip("/"), entries, self._stats(),
+            self.send_html(pages.cargo_listing(self.cfg, rel.strip("/"), entries, self._stats(),
                                               q.get("msg", ""), q.get("err") == "1"))
         else:
             self.send_file(target, sandbox=True)
@@ -335,7 +417,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_upload(self):
         if not self.cfg.uploads_enabled:
-            self.error(403, "Uploads are disabled on this box.")
+            self.error(403, "No parley: the captain has closed the hold to new cargo.")
             return
         ajax = self.headers.get("X-Requested-With") == "XMLHttpRequest"
         try:
@@ -345,7 +427,7 @@ class Handler(BaseHTTPRequestHandler):
             if ajax:
                 self.send_text(str(e), 413)
             else:
-                self.redirect(f"/files/?err=1&msg={quote(str(e))}", 303)
+                self.redirect(f"/cargo/?err=1&msg={quote(str(e))}", 303)
             return
         saved = []
         upload_dir = self.cfg.upload_path
@@ -379,7 +461,7 @@ class Handler(BaseHTTPRequestHandler):
         if ajax:
             self.send_json({"saved": saved})
         else:
-            self.redirect(f"/files/uploads/?msg={quote('Uploaded: ' + ', '.join(saved))}", 303)
+            self.redirect(f"/cargo/uploads/?msg={quote('Cargo stowed: ' + ', '.join(saved))}", 303)
 
     # ------------------------------------------------------------ chat
     def _read_form(self) -> dict:
@@ -483,6 +565,77 @@ class Handler(BaseHTTPRequestHandler):
             return ""
         os.replace(tmp, self.app.board_images / fname)
         return fname
+
+
+    # ------------------------------------------------------------ quarterdeck
+    def _require_captain(self) -> bool:
+        if not self.cfg.quarterdeck_password:
+            self.error(404, "Nothing at this address.")
+            return False
+        if self.app.check_password(self.headers.get("Authorization")):
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Quarterdeck", charset="UTF-8"')
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        body = b"Captain's password required.\n"
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+        return False
+
+    def serve_quarterdeck(self, q: dict):
+        if not self._require_captain():
+            return
+        cargo, total = self.app.cargo_index()
+        info = self.app.info()
+        info["cargo_truncated"] = total > len(cargo)
+        self.send_html(pages.quarterdeck(
+            self.cfg, info, cargo, self.app.chat.recent(100), self.app.board.threads(),
+            self.app.csrf_token(), self._stats(), q.get("msg", ""), q.get("err") == "1",
+        ), extra={"Cache-Control": "no-store, private"})
+
+    def handle_quarterdeck(self, action: str):
+        if not self._require_captain():
+            return
+        form = self._read_form()
+        if not hmac.compare_digest(form.get("token", ""), self.app.csrf_token()):
+            self.redirect(f"/quarterdeck?err=1&msg={quote('Stale form token; try again.')}", 303)
+            return
+        msg, err = "Done.", False
+        if action == "cargo/delete":
+            rel = form.get("path", "")
+            target = self._resolve(self.cfg.share_path, rel)
+            if target is None or not target.is_file():
+                msg, err = "No such cargo.", True
+            else:
+                target.unlink()
+                log.info("quarterdeck: %s thrown overboard by %s", rel, self._client_ip())
+                msg = f"{rel} thrown overboard."
+        elif action == "chat/delete":
+            ok = form.get("id", "").isdigit() and self.app.chat.delete(int(form["id"]))
+            msg, err = ("Message deleted.", False) if ok else ("No such message.", True)
+        elif action == "chat/clear":
+            self.app.chat.clear()
+            msg = "Chat log wiped."
+        elif action == "board/delete":
+            t, p = form.get("thread", ""), form.get("post", "")
+            ok = t.isdigit() and p.isdigit() and self.app.board.delete_post(int(t), int(p))
+            msg, err = ("Post deleted.", False) if ok else ("No such post.", True)
+        elif action == "settings":
+            values = {
+                "uploads_enabled": form.get("uploads_enabled") == "1",
+                "chat_enabled": form.get("chat_enabled") == "1",
+                "board_enabled": form.get("board_enabled") == "1",
+                "site_name": clip(form.get("site_name", ""), 40) or self.cfg.site_name,
+                "motd": form.get("motd", "").replace("\r", "").strip()[:2000] or self.cfg.motd,
+            }
+            self.app.save_overrides(values)
+            msg = "Ship's articles updated."
+        else:
+            self.error(404, "Nothing at this address.")
+            return
+        self.redirect(f"/quarterdeck?{'err=1&' if err else ''}msg={quote(msg)}", 303)
 
 
 def make_server(cfg: Config, dev: bool = False) -> ThreadingHTTPServer:

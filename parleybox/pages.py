@@ -1,5 +1,8 @@
 """HTML rendering. Plain string building, no external template engine,
-no external assets: everything must work with zero internet access."""
+no external assets: everything must work with zero internet access.
+
+Vocabulary: visitors come *aboard*, files are *cargo*, sharing one is a
+*parley*, and the captain runs things from the *Quarterdeck*."""
 
 from urllib.parse import quote
 
@@ -29,25 +32,31 @@ FLAG = r"""
 """
 
 NAV = [
-    ("/", "Home"),
-    ("/files/", "Files"),
+    ("/", "Deck"),
+    ("/cargo/", "Cargo"),
     ("/chat", "Chat"),
     ("/board", "Board"),
     ("/about", "About"),
+    ("/quarterdeck", "Quarterdeck"),
 ]
 
 
 def layout(cfg, title: str, body: str, active: str = "", stats: dict | None = None,
            scripts: tuple = ()) -> str:
+    hidden = set()
+    if not cfg.chat_enabled:
+        hidden.add("/chat")
+    if not cfg.board_enabled:
+        hidden.add("/board")
+    if not cfg.quarterdeck_password:
+        hidden.add("/quarterdeck")
     nav = "".join(
         f'<a href="{href}" class="{"active" if href == active else ""}">{label}</a>'
-        for href, label in NAV
-        if not (href == "/chat" and not cfg.chat_enabled)
-        and not (href == "/board" and not cfg.board_enabled)
+        for href, label in NAV if href not in hidden
     )
     st = ""
     if stats:
-        st = f'<span class="stats">{stats["online"]} aboard now &middot; {stats["total"]} visitors total</span>'
+        st = f'<span class="stats">{stats["online"]} aboard now &middot; {stats["total"]} have come aboard</span>'
     js = "".join(f'<script src="/static/{s}" defer></script>' for s in scripts)
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -68,7 +77,7 @@ def layout(cfg, title: str, body: str, active: str = "", stats: dict | None = No
 <main>
 {body}
 </main>
-<footer>{esc(cfg.site_name)} &middot; offline &middot; anonymous &middot; no logs of who you are &middot; parleybox v{__version__}</footer>
+<footer>{esc(cfg.site_name)} &middot; offline &middot; anonymous &middot; no log of who you are &middot; parleybox v{__version__}</footer>
 </body>
 </html>
 """
@@ -82,54 +91,55 @@ def _flash(msg: str, error: bool = False) -> str:
 
 def home(cfg, stats: dict, msg: str = "") -> str:
     cards = [
-        ("/files/", "Browse files", "Download what others have left here."),
+        ("/cargo/", "Cargo hold", "Browse what others have brought aboard."),
     ]
     if cfg.uploads_enabled:
-        cards.append(("/files/#upload", "Upload", f"Share something. Max {cfg.max_upload_mb} MB per upload."))
+        cards.append(("/cargo/#parley", "Parley", f"Share cargo of your own. Up to {cfg.max_upload_mb} MB a go."))
     if cfg.chat_enabled:
-        cards.append(("/chat", "Chat", "Talk to whoever is connected right now."))
+        cards.append(("/chat", "Chat", "Talk with whoever is aboard right now."))
     if cfg.board_enabled:
         cards.append(("/board", "Message board", "Leave a note that outlives your visit."))
-    cards.append(("/about", "About", "What this thing is and how it works."))
+    cards.append(("/about", "About", "What this vessel is and how it works."))
     grid = "".join(
         f'<a class="card" href="{href}"><b>{esc(t)}</b><span>{esc(d)}</span></a>' for href, t, d in cards
     )
     body = f"""
 {_flash(msg)}
 <pre class="flag">{esc(FLAG)}</pre>
-<h1>Welcome to {esc(cfg.site_name)}</h1>
+<h1>Welcome aboard {esc(cfg.site_name)}</h1>
 <pre class="motd">{esc(cfg.motd)}</pre>
 <div class="grid">{grid}</div>
 """
-    return layout(cfg, "Home", body, "/", stats)
+    return layout(cfg, "Deck", body, "/", stats)
 
 
-def upload_form(cfg, msg: str = "", error: bool = False) -> str:
+def parley_form(cfg, msg: str = "", error: bool = False) -> str:
     if not cfg.uploads_enabled:
-        return ""
+        return _flash(msg, error)
     return f"""
-<div class="panel" id="upload">
-<h2>Upload</h2>
+<div class="panel" id="parley">
+<h2>Parley</h2>
+<p class="dim small">Bring cargo aboard for everyone within range.</p>
 {_flash(msg, error)}
-<form id="upload-form" method="post" action="/upload" enctype="multipart/form-data">
-<label>Files (max {cfg.max_upload_mb} MB per upload)</label>
+<form id="upload-form" method="post" action="/parley" enctype="multipart/form-data">
+<label>Cargo (up to {cfg.max_upload_mb} MB per parley)</label>
 <input type="file" name="file" multiple required>
-<button type="submit">Upload</button>
+<button type="submit">Parley</button>
 <progress id="upload-progress" value="0" max="100" style="display:none"></progress>
 <div id="upload-status" class="dim small"></div>
 </form>
-<p class="dim small">Uploads land in <a href="/files/uploads/">/files/uploads/</a>. Anything you upload is visible to everyone on this network.</p>
+<p class="dim small">Stowed in <a href="/cargo/uploads/">/cargo/uploads/</a>. Anything you bring aboard is visible to everyone on this network.</p>
 </div>
 """
 
 
-def file_listing(cfg, rel: str, entries: list, stats: dict, msg: str = "", error: bool = False) -> str:
+def cargo_listing(cfg, rel: str, entries: list, stats: dict, msg: str = "", error: bool = False) -> str:
     parts = [p for p in rel.split("/") if p]
-    crumbs = ['<a href="/files/">files</a>']
+    crumbs = ['<a href="/cargo/">cargo</a>']
     acc = ""
     for p in parts:
         acc += "/" + quote(p)
-        crumbs.append(f'<a href="/files{acc}/">{esc(p)}</a>')
+        crumbs.append(f'<a href="/cargo{acc}/">{esc(p)}</a>')
     rows = []
     if parts:
         rows.append('<tr><td><a href="../">../</a></td><td class="size"></td><td class="time"></td></tr>')
@@ -142,17 +152,17 @@ def file_listing(cfg, rel: str, entries: list, stats: dict, msg: str = "", error
             f'<td class="size">{size}</td><td class="time">{fmt_time(e["mtime"])}</td></tr>'
         )
     if not entries:
-        rows.append('<tr><td colspan="3" class="dim">Nothing here yet.</td></tr>')
+        rows.append('<tr><td colspan="3" class="dim">The hold is empty. Nothing stowed here yet.</td></tr>')
     body = f"""
-<h1>Files</h1>
+<h1>Cargo hold</h1>
 <div class="crumbs">{" / ".join(crumbs)}</div>
 <table class="files">
-<tr><th>Name</th><th>Size</th><th class="time">Modified</th></tr>
+<tr><th>Name</th><th>Size</th><th class="time">Stowed</th></tr>
 {"".join(rows)}
 </table>
-{upload_form(cfg, msg, error)}
+{parley_form(cfg, msg, error)}
 """
-    return layout(cfg, "Files", body, "/files/", stats, scripts=("upload.js",))
+    return layout(cfg, "Cargo", body, "/cargo/", stats, scripts=("upload.js",))
 
 
 def chat_page(cfg, messages: list, stats: dict) -> str:
@@ -173,12 +183,12 @@ def chat_page(cfg, messages: list, stats: dict) -> str:
   <div class="text"><label>Message</label><input type="text" id="chat-text" name="text" maxlength="500" autocomplete="off" autofocus></div>
   <button type="submit">Send</button>
 </form>
-<p class="dim small">Messages are kept until the box forgets them (last {cfg.chat_history}). Nobody knows who you are.</p>
+<p class="dim small">Only whoever is aboard can read this. The box keeps the last {cfg.chat_history} messages. Nobody knows who you are.</p>
 """
     return layout(cfg, "Chat", body, "/chat", stats, scripts=("chat.js",))
 
 
-def _post_html(p: dict, op: bool = False) -> str:
+def _post_html(p: dict) -> str:
     img = ""
     if p.get("image"):
         src = "/board-img/" + quote(p["image"])
@@ -233,7 +243,7 @@ def board_index(cfg, threads: list, stats: dict, msg: str = "", error: bool = Fa
 
 
 def board_thread(cfg, t: dict, stats: dict, msg: str = "", error: bool = False) -> str:
-    posts = "".join(_post_html(p, i == 0) for i, p in enumerate(t["posts"]))
+    posts = "".join(_post_html(p) for p in t["posts"])
     body = f"""
 <div class="crumbs"><a href="/board">board</a> / {esc(t["subject"])}</div>
 <h1>{esc(t["subject"])}</h1>
@@ -246,15 +256,15 @@ def board_thread(cfg, t: dict, stats: dict, msg: str = "", error: bool = False) 
 
 def about(cfg, stats: dict) -> str:
     body = f"""
-<h1>About this box</h1>
+<h1>About this vessel</h1>
 <div class="panel">
 <p><b>{esc(cfg.site_name)}</b> is a small computer with a Wi-Fi radio and some storage.
 It is <b>not connected to the internet</b>. Everything you see here lives on the box
-and is shared only with people within radio range.</p>
+and is shared only with people within radio range: whoever is aboard.</p>
 <ul>
-<li>No accounts, no passwords, no tracking. Your IP address is used only to count visitors and rate-limit posting.</li>
-<li>Files you upload can be downloaded by anyone nearby. Files can be deleted by whoever runs the box.</li>
-<li>Chat and board posts are stored on the box until they age out.</li>
+<li>No accounts, no passwords, no tracking. Your address is used only to count who is aboard and to rate-limit posting.</li>
+<li>Cargo you bring aboard can be taken by anyone nearby. The captain can throw cargo overboard.</li>
+<li>Chat and board posts stay on the box until they age out or the captain removes them.</li>
 </ul>
 <p>Reach it any time while connected at <b>http://{esc(cfg.hostname)}/</b>. If your browser insists on
 https, type the address with <b>http://</b> in front, or use the "sign in to network" prompt.</p>
@@ -262,7 +272,7 @@ https, type the address with <b>http://</b> in front, or use the "sign in to net
 <div class="panel">
 <h2>Lineage</h2>
 <p>PirateBox was created by David Darts in 2011 and maintained by Matthias Strubel and a
-community until 2019. This is an independent reimplementation of the idea:
+community until 2019. {esc(cfg.site_name)} is an independent reimplementation of the idea:
 a portable, anonymous, offline place to share files and talk.</p>
 </div>
 """
@@ -270,5 +280,108 @@ a portable, anonymous, offline place to share files and talk.</p>
 
 
 def error_page(cfg, code: int, text: str) -> str:
-    body = f'<h1>{code}</h1><p>{esc(text)}</p><p><a href="/">Back to shore</a></p>'
+    body = f'<h1>{code}</h1><p>{esc(text)}</p><p><a href="/">Back to the deck</a></p>'
     return layout(cfg, str(code), body)
+
+
+# ---------------------------------------------------------------- quarterdeck
+
+def _btn(action: str, token: str, label: str, fields: dict, danger: bool = True, confirm: str = "") -> str:
+    hidden = "".join(f'<input type="hidden" name="{esc(k)}" value="{esc(v)}">' for k, v in fields.items())
+    onsubmit = f' onsubmit="return confirm({esc(repr(confirm))})"' if confirm else ""
+    return (f'<form class="inline" method="post" action="{action}"{onsubmit}>'
+            f'<input type="hidden" name="token" value="{esc(token)}">{hidden}'
+            f'<button class="tiny{" danger" if danger else ""}" type="submit">{esc(label)}</button></form>')
+
+
+def quarterdeck(cfg, info: dict, cargo: list, chat: list, threads: list, token: str,
+                stats: dict, msg: str = "", error: bool = False) -> str:
+    disk = info["disk"]
+    stat_tiles = [
+        (stats["online"], "aboard now"),
+        (stats["total"], "have come aboard"),
+        (info["cargo_count"], "cargo items"),
+        (human_size(info["cargo_bytes"]), "cargo stowed"),
+        (human_size(disk["free"]), f"free of {human_size(disk['total'])}"),
+        (info["chat_count"], "chat messages"),
+        (f'{info["threads"]}/{info["posts"]}', "threads / posts"),
+        (info["uptime"], "underway"),
+    ]
+    tiles = "".join(f'<div class="stat"><b>{esc(v)}</b><span>{esc(l)}</span></div>' for v, l in stat_tiles)
+
+    def chk(name, on):
+        return f'<label><input type="checkbox" name="{name}" value="1"{" checked" if on else ""}>{name.replace("_enabled", "")}</label>'
+
+    settings = f"""
+<div class="panel">
+<h2>Ship's articles</h2>
+<form method="post" action="/quarterdeck/settings">
+<input type="hidden" name="token" value="{esc(token)}">
+<div class="toggles">{chk("uploads_enabled", cfg.uploads_enabled)}{chk("chat_enabled", cfg.chat_enabled)}{chk("board_enabled", cfg.board_enabled)}</div>
+<label>Ship's name</label><input type="text" name="site_name" maxlength="40" value="{esc(cfg.site_name)}">
+<label>Message of the day</label><textarea name="motd" maxlength="2000">{esc(cfg.motd)}</textarea>
+<button type="submit">Save</button>
+<span class="dim small">Saved to the data dir and kept across restarts; overrides parleybox.conf.</span>
+</form>
+</div>
+"""
+    rows = []
+    for e in cargo:
+        rel = e["rel"]
+        rows.append(
+            f'<tr><td><a href="/cargo/{quote(rel)}">{esc(rel)}</a></td>'
+            f'<td class="size">{human_size(e["size"])}</td><td class="time">{fmt_time(e["mtime"])}</td>'
+            f'<td class="act">{_btn("/quarterdeck/cargo/delete", token, "overboard", {"path": rel}, confirm=f"Throw {rel} overboard?")}</td></tr>'
+        )
+    if not rows:
+        rows.append('<tr><td colspan="4" class="dim">The hold is empty.</td></tr>')
+    cargo_html = f"""
+<div class="panel">
+<h2>Cargo</h2>
+<table class="files"><tr><th>Path</th><th>Size</th><th class="time">Stowed</th><th></th></tr>{"".join(rows)}</table>
+{'<p class="dim small">Showing the newest %d items.</p>' % len(cargo) if info.get("cargo_truncated") else ""}
+</div>
+"""
+    chat_rows = "".join(
+        f'<p class="msg"><span class="t">{fmt_time(m["ts"])}</span><span class="n">{esc(m.get("name") or "anon")}</span>'
+        f'<span class="b">{esc(m["text"])}</span> {_btn("/quarterdeck/chat/delete", token, "x", {"id": str(m["id"])})}</p>'
+        for m in reversed(chat)
+    ) or '<p class="dim">Quiet on deck.</p>'
+    chat_html = f"""
+<div class="panel">
+<h2>Chat</h2>
+{chat_rows}
+<p>{_btn("/quarterdeck/chat/clear", token, "Clear the whole log", {}, confirm="Wipe every chat message?")}</p>
+</div>
+"""
+    thread_rows = []
+    for t in threads:
+        op = t["posts"][0]
+        thread_rows.append(
+            f'<div class="thread"><a class="subject" href="/board/{t["id"]}">{esc(t["subject"])}</a> '
+            f'<span class="dim small">{len(t["posts"]) - 1} replies &middot; {fmt_time(op["ts"])}</span> '
+            f'{_btn("/quarterdeck/board/delete", token, "delete thread", {"thread": str(t["id"]), "post": str(op["id"])}, confirm="Delete this thread?")}'
+            + "".join(
+                f'<div class="small dim">&nbsp;&nbsp;No.{p["id"]} {esc(p.get("name") or "Anonymous")}: {esc(p["text"][:80])} '
+                f'{_btn("/quarterdeck/board/delete", token, "x", {"thread": str(t["id"]), "post": str(p["id"])})}</div>'
+                for p in t["posts"][1:]
+            )
+            + "</div>"
+        )
+    board_html = f"""
+<div class="panel">
+<h2>Board</h2>
+{"".join(thread_rows) or '<p class="dim">No threads.</p>'}
+</div>
+"""
+    body = f"""
+<h1>Quarterdeck</h1>
+<p class="dim small">Captain's station. Everything here is destructive and immediate.</p>
+{_flash(msg, error)}
+<div class="qd-stats">{tiles}</div>
+{settings}
+{cargo_html}
+{chat_html}
+{board_html}
+"""
+    return layout(cfg, "Quarterdeck", body, "/quarterdeck", stats)
