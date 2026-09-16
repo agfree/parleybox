@@ -1,8 +1,8 @@
 #!/bin/sh
-# Bring the PirateBox Wi-Fi interface up with a static address (or down).
-# Used by piratebox-net.service; hostapd and dnsmasq start after this.
+# Bring the ParleyBox Wi-Fi interface up with a static address (or down).
+# Used by parleybox-net.service; hostapd and dnsmasq start after this.
 set -eu
-. /etc/piratebox/network.env
+. /etc/parleybox/network.env
 
 case "${1:-up}" in
   up)
@@ -12,7 +12,7 @@ case "${1:-up}" in
       [ -d "/sys/class/net/$IFACE" ] && break
       sleep 1
     done
-    [ -d "/sys/class/net/$IFACE" ] || { echo "piratebox-net: no interface $IFACE" >&2; exit 1; }
+    [ -d "/sys/class/net/$IFACE" ] || { echo "parleybox-net: no interface $IFACE" >&2; exit 1; }
     ip link set "$IFACE" up
     ip addr flush dev "$IFACE" 2>/dev/null || true
     ip addr add "$IP/$PREFIX" dev "$IFACE"

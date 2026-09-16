@@ -1,4 +1,4 @@
-"""Configuration loading for PirateBox (INI file with sane defaults)."""
+"""Configuration loading for ParleyBox (INI file with sane defaults)."""
 
 import configparser
 import os
@@ -14,13 +14,13 @@ DEFAULT_MOTD = (
 
 @dataclass
 class Config:
-    site_name: str = "PirateBox"
-    hostname: str = "piratebox.lan"
+    site_name: str = "ParleyBox"
+    hostname: str = "parleybox.lan"
     listen: str = "0.0.0.0"
     port: int = 80
-    share_dir: str = "/srv/piratebox/share"
+    share_dir: str = "/srv/parleybox/share"
     upload_dir: str = ""  # defaults to <share_dir>/uploads
-    data_dir: str = "/srv/piratebox/data"
+    data_dir: str = "/srv/parleybox/data"
     uploads_enabled: bool = True
     max_upload_mb: int = 2048
     chat_enabled: bool = True
@@ -62,8 +62,8 @@ def load(path: str | None = None, **overrides) -> Config:
     if path and os.path.exists(path):
         parser = configparser.ConfigParser(interpolation=None)
         parser.read(path, encoding="utf-8")
-        if parser.has_section("piratebox"):
-            sec = parser["piratebox"]
+        if parser.has_section("parleybox"):
+            sec = parser["parleybox"]
             for f in fields(Config):
                 if f.name not in sec:
                     continue

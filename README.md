@@ -1,4 +1,4 @@
-# PirateBox
+# ParleyBox
 
 A from-scratch recreation of [PirateBox](https://en.wikipedia.org/wiki/PirateBox):
 a small computer that broadcasts an **open Wi-Fi network with no internet**, where
@@ -11,7 +11,7 @@ a Raspberry Pi (or any Debian box) with a Wi-Fi adapter that supports AP mode.
 
 ```
                        _.--.
-                   _.-'_:-'||          Connect to "PirateBox - Share Freely"
+                   _.-'_:-'||          Connect to "ParleyBox - Share Freely"
                _.-'_.-::::'||          Your phone says "sign in to network"
           _.-:'_.-::::::'  ||          ...and you're aboard.
         .'`-.-:::::::'     ||
@@ -48,7 +48,7 @@ should list `AP`). Add a USB SSD or big SD card for the shared folder.
 
 ```sh
 git clone <this repo> && cd pirate_bbs
-sudo ./install.sh --ssid "PirateBox - Share Freely" --country US
+sudo ./install.sh --ssid "ParleyBox - Share Freely" --country US
 ```
 
 Options: `--iface wlan0` `--ip 192.168.77.1` `--channel 6` `--country US` `--no-network`.
@@ -56,34 +56,34 @@ Options: `--iface wlan0` `--ip 192.168.77.1` `--channel 6` `--country US` `--no-
 The installer:
 
 1. installs `hostapd`, `dnsmasq`, `rfkill`, `iw`;
-2. copies the server to `/usr/local/lib/piratebox` and config to `/etc/piratebox/`;
+2. copies the server to `/usr/local/lib/parleybox` and config to `/etc/parleybox/`;
 3. tells NetworkManager (or dhcpcd) to leave the Wi-Fi interface alone;
-4. installs and starts four systemd units grouped under `piratebox.target`:
-   `piratebox-net` (static IP), `piratebox-hostapd`, `piratebox-dnsmasq`, `piratebox` (web).
+4. installs and starts four systemd units grouped under `parleybox.target`:
+   `parleybox-net` (static IP), `parleybox-hostapd`, `parleybox-dnsmasq`, `parleybox` (web).
 
 **The Wi-Fi interface becomes the access point**, so manage the Pi over Ethernet or a second adapter.
 Use `--no-network` to install only the web server (for example to serve it on your LAN).
 
-Shared files live in `/srv/piratebox/share`; uploads go to `/srv/piratebox/share/uploads`.
-Drop files there with `scp` or a USB drive. Chat and board state live in `/srv/piratebox/data`.
+Shared files live in `/srv/parleybox/share`; uploads go to `/srv/parleybox/share/uploads`.
+Drop files there with `scp` or a USB drive. Chat and board state live in `/srv/parleybox/data`.
 
 ```sh
-journalctl -u piratebox -u piratebox-hostapd -u piratebox-dnsmasq -f   # logs
-sudo systemctl restart piratebox.target                                 # restart everything
+journalctl -u parleybox -u parleybox-hostapd -u parleybox-dnsmasq -f   # logs
+sudo systemctl restart parleybox.target                                 # restart everything
 sudo ./uninstall.sh [--purge]                                           # remove
 ```
 
 ## Configuration
 
-Edit `/etc/piratebox/piratebox.conf` (see `etc/piratebox.conf` for every key) and
-`sudo systemctl restart piratebox`. You can rename the box, change the message of the day,
+Edit `/etc/parleybox/parleybox.conf` (see `etc/parleybox.conf` for every key) and
+`sudo systemctl restart parleybox`. You can rename the box, change the message of the day,
 disable uploads, chat or the board, cap upload size, and set the portal hostname.
-Wi-Fi settings live in `/etc/piratebox/hostapd.conf` and `dnsmasq.conf`.
+Wi-Fi settings live in `/etc/parleybox/hostapd.conf` and `dnsmasq.conf`.
 
 ## Run it anywhere (dev mode)
 
 ```sh
-python3 -m piratebox --dev            # http://localhost:8080/, ./share and ./data
+python3 -m parleybox --dev            # http://localhost:8080/, ./share and ./data
 python3 -m unittest discover -s tests # 27 tests, no extra packages
 ```
 
@@ -95,7 +95,7 @@ There is no internet, so we cannot break HTTPS and do not try. Instead:
 
 - dnsmasq resolves **every** hostname to the box, so `http://anything/` lands on the portal.
 - Operating systems probe known URLs (`/generate_204`, `/hotspot-detect.html`, `/ncsi.txt`, ...)
-  to detect connectivity. The server answers those with a redirect to `http://piratebox.lan/`,
+  to detect connectivity. The server answers those with a redirect to `http://parleybox.lan/`,
   which makes the OS show its "sign in to network" page with the portal inside it.
 - DHCP option 114 advertises the portal URL for clients that support RFC 8910.
 - Requests with an unknown `Host` header are redirected too, so old bookmarks and
@@ -107,9 +107,9 @@ every offline portal makes. The About page tells visitors to use `http://`.
 ## Layout
 
 ```
-piratebox/        Python package (server, multipart parser, stores, pages, web assets)
+parleybox/        Python package (server, multipart parser, stores, pages, web assets)
 etc/              config and systemd unit templates
-bin/piratebox-net interface bring-up script
+bin/parleybox-net interface bring-up script
 install.sh        Debian/Raspberry Pi OS installer
 uninstall.sh
 tests/            unittest suite

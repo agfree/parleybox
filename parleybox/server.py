@@ -19,7 +19,7 @@ from .multipart import MultipartError, MultipartReader, parse_boundary
 from .store import BoardStore, ChatStore, VisitorStore
 from .util import clip, sanitize_filename, unique_path
 
-log = logging.getLogger("piratebox")
+log = logging.getLogger("parleybox")
 
 STATIC_DIR = Path(__file__).parent / "web"
 
@@ -67,7 +67,7 @@ class App:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "PirateBox"
+    server_version = "ParleyBox"
     sys_version = ""
     protocol_version = "HTTP/1.1"
     timeout = 120
@@ -497,7 +497,7 @@ def make_server(cfg: Config, dev: bool = False) -> ThreadingHTTPServer:
 
 def serve_forever(cfg: Config, dev: bool = False) -> None:
     server = make_server(cfg, dev)
-    log.info("PirateBox %s listening on http://%s:%d/ (share=%s data=%s)",
+    log.info("ParleyBox %s listening on http://%s:%d/ (share=%s data=%s)",
              "dev" if dev else "", cfg.listen, cfg.port, cfg.share_path, cfg.data_path)
     try:
         server.serve_forever()

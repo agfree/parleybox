@@ -1,5 +1,5 @@
-# PirateBox DHCP + DNS. Rendered by install.sh -> /etc/piratebox/dnsmasq.conf
-# Runs as its own instance (piratebox-dnsmasq.service), not the system dnsmasq.
+# ParleyBox DHCP + DNS. Rendered by install.sh -> /etc/parleybox/dnsmasq.conf
+# Runs as its own instance (parleybox-dnsmasq.service), not the system dnsmasq.
 interface=@IFACE@
 bind-interfaces
 except-interface=lo
@@ -17,6 +17,6 @@ dhcp-option=option:dns-server,@IP@
 # RFC 8910 captive-portal API URL. Newer phones use it to find the portal.
 dhcp-option=114,http://@HOSTNAME@/
 dhcp-authoritative
-dhcp-leasefile=/var/lib/piratebox/dnsmasq.leases
+dhcp-leasefile=/var/lib/parleybox/dnsmasq.leases
 log-facility=-
 quiet-dhcp

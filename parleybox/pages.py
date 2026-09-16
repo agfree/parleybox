@@ -68,7 +68,7 @@ def layout(cfg, title: str, body: str, active: str = "", stats: dict | None = No
 <main>
 {body}
 </main>
-<footer>{esc(cfg.site_name)} &middot; offline &middot; anonymous &middot; no logs of who you are &middot; piratebox v{__version__}</footer>
+<footer>{esc(cfg.site_name)} &middot; offline &middot; anonymous &middot; no logs of who you are &middot; parleybox v{__version__}</footer>
 </body>
 </html>
 """

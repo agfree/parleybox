@@ -1,0 +1,13 @@
+[Unit]
+Description=ParleyBox access point (hostapd)
+PartOf=parleybox.target
+Requires=parleybox-net.service
+After=parleybox-net.service
+
+[Service]
+ExecStart=/usr/sbin/hostapd /etc/parleybox/hostapd.conf
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=parleybox.target

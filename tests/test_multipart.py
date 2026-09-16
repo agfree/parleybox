@@ -1,7 +1,7 @@
 import io
 import unittest
 
-from piratebox.multipart import MultipartError, MultipartReader, parse_boundary
+from parleybox.multipart import MultipartError, MultipartReader, parse_boundary
 
 
 def build(parts, boundary=b"BOUND"):

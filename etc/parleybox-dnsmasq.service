@@ -1,0 +1,14 @@
+[Unit]
+Description=ParleyBox DHCP/DNS (dnsmasq)
+PartOf=parleybox.target
+Requires=parleybox-net.service
+After=parleybox-net.service
+
+[Service]
+ExecStartPre=/bin/mkdir -p /var/lib/parleybox
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/etc/parleybox/dnsmasq.conf
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=parleybox.target

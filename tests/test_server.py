@@ -7,8 +7,8 @@ import threading
 import unittest
 from pathlib import Path
 
-from piratebox.config import Config
-from piratebox.server import make_server
+from parleybox.config import Config
+from parleybox.server import make_server
 
 
 def multipart(fields, files, boundary="TESTBOUNDARY"):
@@ -28,7 +28,7 @@ class ServerTests(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         root = Path(cls.tmp.name)
         cls.cfg = Config(listen="127.0.0.1", port=0, share_dir=str(root / "share"),
-                         data_dir=str(root / "data"), max_upload_mb=1, hostname="piratebox.test")
+                         data_dir=str(root / "data"), max_upload_mb=1, hostname="parleybox.test")
         cls.server = make_server(cls.cfg, dev=False)
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -43,7 +43,7 @@ class ServerTests(unittest.TestCase):
         cls.server.server_close()
         cls.tmp.cleanup()
 
-    def req(self, method, path, body=None, headers=None, host="piratebox.test"):
+    def req(self, method, path, body=None, headers=None, host="parleybox.test"):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         h = {"Host": host}
         h.update(headers or {})
@@ -56,7 +56,7 @@ class ServerTests(unittest.TestCase):
     def test_home_and_about(self):
         r, data = self.req("GET", "/")
         self.assertEqual(r.status, 200)
-        self.assertIn(b"Welcome to PirateBox", data)
+        self.assertIn(b"Welcome to ParleyBox", data)
         r, _ = self.req("GET", "/about")
         self.assertEqual(r.status, 200)
 
@@ -64,7 +64,7 @@ class ServerTests(unittest.TestCase):
         for p in ("/generate_204", "/hotspot-detect.html", "/ncsi.txt", "/canonical.html"):
             r, _ = self.req("GET", p, host="connectivitycheck.gstatic.com")
             self.assertEqual(r.status, 302, p)
-            self.assertEqual(r.getheader("Location"), "http://piratebox.test/")
+            self.assertEqual(r.getheader("Location"), "http://parleybox.test/")
 
     def test_foreign_host_redirects_but_ip_allowed(self):
         r, _ = self.req("GET", "/", host="www.example.com")
@@ -177,7 +177,7 @@ class ServerTests(unittest.TestCase):
     def test_status(self):
         r, data = self.req("GET", "/api/status")
         d = json.loads(data)
-        self.assertEqual(d["hostname"], "piratebox.test")
+        self.assertEqual(d["hostname"], "parleybox.test")
         self.assertGreaterEqual(d["total"], 1)
 
 

@@ -1,14 +1,14 @@
 [Unit]
-Description=PirateBox web server
-PartOf=piratebox.target
+Description=ParleyBox web server
+PartOf=parleybox.target
 After=network.target
 
 [Service]
-User=piratebox
-Group=piratebox
-WorkingDirectory=/usr/local/lib/piratebox
+User=parleybox
+Group=parleybox
+WorkingDirectory=/usr/local/lib/parleybox
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 -m piratebox --config /etc/piratebox/piratebox.conf
+ExecStart=/usr/bin/python3 -m parleybox --config /etc/parleybox/parleybox.conf
 Restart=always
 RestartSec=2
 # bind :80 without root
@@ -18,7 +18,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/srv/piratebox
+ReadWritePaths=/srv/parleybox
 
 [Install]
-WantedBy=piratebox.target
+WantedBy=parleybox.target

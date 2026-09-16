@@ -1,0 +1,14 @@
+[Unit]
+Description=ParleyBox Wi-Fi interface (static address)
+PartOf=parleybox.target
+After=network-pre.target sys-subsystem-net-devices-wlan0.device
+Before=parleybox-hostapd.service parleybox-dnsmasq.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/parleybox/parleybox-net up
+ExecStop=/usr/local/lib/parleybox/parleybox-net down
+
+[Install]
+WantedBy=parleybox.target

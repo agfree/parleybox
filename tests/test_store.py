@@ -4,7 +4,7 @@ import time
 import unittest
 from pathlib import Path
 
-from piratebox.store import BoardStore, ChatStore, VisitorStore
+from parleybox.store import BoardStore, ChatStore, VisitorStore
 
 
 class ChatTests(unittest.TestCase):

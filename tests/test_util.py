@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from piratebox.util import clip, human_size, render_text, sanitize_filename, unique_path
+from parleybox.util import clip, human_size, render_text, sanitize_filename, unique_path
 
 
 class UtilTests(unittest.TestCase):
@@ -37,10 +37,10 @@ class UtilTests(unittest.TestCase):
         self.assertEqual(human_size(3 * 1024 ** 3), "3.0 GB")
 
     def test_render_text(self):
-        out = render_text("<b>hi</b>\n>quote\nsee http://piratebox.lan/x?a=1&b=2")
+        out = render_text("<b>hi</b>\n>quote\nsee http://parleybox.lan/x?a=1&b=2")
         self.assertIn("&lt;b&gt;hi&lt;/b&gt;", out)
         self.assertIn('<span class="quote">&gt;quote</span>', out)
-        self.assertIn('<a href="http://piratebox.lan/x?a=1&amp;b=2"', out)
+        self.assertIn('<a href="http://parleybox.lan/x?a=1&amp;b=2"', out)
         self.assertNotIn("<b>", out)
 
     def test_clip(self):

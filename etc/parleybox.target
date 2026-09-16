@@ -1,0 +1,6 @@
+[Unit]
+Description=ParleyBox offline sharing box (network + web)
+Wants=parleybox-net.service parleybox-hostapd.service parleybox-dnsmasq.service parleybox.service
+
+[Install]
+WantedBy=multi-user.target
