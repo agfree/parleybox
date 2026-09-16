@@ -1,0 +1,13 @@
+[Unit]
+Description=PirateBox access point (hostapd)
+PartOf=piratebox.target
+Requires=piratebox-net.service
+After=piratebox-net.service
+
+[Service]
+ExecStart=/usr/sbin/hostapd /etc/piratebox/hostapd.conf
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=piratebox.target

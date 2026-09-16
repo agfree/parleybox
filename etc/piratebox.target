@@ -1,0 +1,6 @@
+[Unit]
+Description=PirateBox offline sharing box (network + web)
+Wants=piratebox-net.service piratebox-hostapd.service piratebox-dnsmasq.service piratebox.service
+
+[Install]
+WantedBy=multi-user.target

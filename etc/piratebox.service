@@ -1,0 +1,24 @@
+[Unit]
+Description=PirateBox web server
+PartOf=piratebox.target
+After=network.target
+
+[Service]
+User=piratebox
+Group=piratebox
+WorkingDirectory=/usr/local/lib/piratebox
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m piratebox --config /etc/piratebox/piratebox.conf
+Restart=always
+RestartSec=2
+# bind :80 without root
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/srv/piratebox
+
+[Install]
+WantedBy=piratebox.target

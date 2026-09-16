@@ -1,0 +1,20 @@
+# PirateBox open access point. Rendered by install.sh -> /etc/piratebox/hostapd.conf
+interface=@IFACE@
+driver=nl80211
+ssid=@SSID@
+country_code=@COUNTRY@
+hw_mode=g
+channel=@CHANNEL@
+ieee80211n=1
+wmm_enabled=1
+ieee80211d=1
+# open network: no WPA, no password. That's the point.
+auth_algs=1
+wpa=0
+macaddr_acl=0
+ignore_broadcast_ssid=0
+# keep clients from talking to each other only if you want a pure kiosk:
+# ap_isolate=1
+max_num_sta=64
+logger_syslog=-1
+logger_syslog_level=2

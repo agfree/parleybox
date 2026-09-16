@@ -1,0 +1,26 @@
+#!/bin/sh
+# Bring the PirateBox Wi-Fi interface up with a static address (or down).
+# Used by piratebox-net.service; hostapd and dnsmasq start after this.
+set -eu
+. /etc/piratebox/network.env
+
+case "${1:-up}" in
+  up)
+    command -v rfkill >/dev/null 2>&1 && rfkill unblock wifi || true
+    # give the kernel a moment if the USB adapter is still enumerating
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      [ -d "/sys/class/net/$IFACE" ] && break
+      sleep 1
+    done
+    [ -d "/sys/class/net/$IFACE" ] || { echo "piratebox-net: no interface $IFACE" >&2; exit 1; }
+    ip link set "$IFACE" up
+    ip addr flush dev "$IFACE" 2>/dev/null || true
+    ip addr add "$IP/$PREFIX" dev "$IFACE"
+    ;;
+  down)
+    ip addr flush dev "$IFACE" 2>/dev/null || true
+    ip link set "$IFACE" down 2>/dev/null || true
+    ;;
+  *)
+    echo "usage: $0 up|down" >&2; exit 2 ;;
+esac

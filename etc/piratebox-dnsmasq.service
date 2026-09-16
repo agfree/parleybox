@@ -1,0 +1,14 @@
+[Unit]
+Description=PirateBox DHCP/DNS (dnsmasq)
+PartOf=piratebox.target
+Requires=piratebox-net.service
+After=piratebox-net.service
+
+[Service]
+ExecStartPre=/bin/mkdir -p /var/lib/piratebox
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/etc/piratebox/dnsmasq.conf
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=piratebox.target
