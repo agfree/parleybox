@@ -85,6 +85,7 @@ rm -rf "$LIB/parleybox"
 cp -r "$SRC/parleybox" "$LIB/parleybox"
 find "$LIB/parleybox" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 install -m 755 "$SRC/bin/parleybox-net" "$LIB/parleybox-net"
+install -m 755 "$SRC/bin/parleybox-ssh" "$LIB/parleybox-ssh"
 revision > "$LIB/REVISION"
 if [ ! -f "$ETC/parleybox.conf" ]; then
   install -m 644 "$SRC/etc/parleybox.conf" "$ETC/parleybox.conf"
@@ -94,6 +95,8 @@ else
 fi
 install -m 644 "$SRC/etc/parleybox.service" /etc/systemd/system/parleybox.service
 install -m 644 "$SRC/etc/parleybox.target" /etc/systemd/system/parleybox.target
+install -m 644 "$SRC/etc/parleybox-ssh.path" /etc/systemd/system/parleybox-ssh.path
+install -m 644 "$SRC/etc/parleybox-ssh.service" /etc/systemd/system/parleybox-ssh.service
 if [ ! -e "$SRV/share/README.txt" ]; then
   cat > "$SRV/share/README.txt" <<TXT
 This is the cargo hold of a ParleyBox.
@@ -158,7 +161,7 @@ systemctl enable parleybox.target
 if [ $NETWORK -eq 1 ]; then
   systemctl enable parleybox-net.service parleybox-hostapd.service parleybox-dnsmasq.service
 fi
-systemctl enable parleybox.service
+systemctl enable parleybox.service parleybox-ssh.path
 if [ $UPGRADE -eq 0 ]; then
   systemctl restart parleybox.target
 elif [ "$(net_units)" != "$OLD_UNITS" ]; then
@@ -167,6 +170,8 @@ elif [ "$(net_units)" != "$OLD_UNITS" ]; then
 else
   systemctl restart parleybox.service
 fi
+# lets the Quarterdeck switch SSH on and off (only if SSH isn't enabled at boot)
+systemctl restart parleybox-ssh.path
 
 sleep 2
 say "Status"

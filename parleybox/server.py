@@ -8,6 +8,7 @@ import mimetypes
 import os
 import secrets
 import shutil
+import subprocess
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -40,6 +41,7 @@ IMAGE_TYPES = {
 }
 BOARD_IMAGE_MAX = 8 * 1024 * 1024
 FORM_FIELD_MAX = 64 * 1024
+SSH_WINDOW = 3600  # how long "Open SSH" keeps it open; parleybox-ssh caps it at this too
 
 
 class App:
@@ -85,6 +87,45 @@ class App:
         tmp = self.overrides_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, self.overrides_path)
+
+    # -- maintenance SSH --------------------------------------------------
+    # The web server runs unprivileged, so it only writes a request file; the
+    # root-owned parleybox-ssh.path unit notices and runs bin/parleybox-ssh.
+    @property
+    def ssh_request(self) -> Path:
+        return self.cfg.data_path / "ssh-request"
+
+    def systemctl(self, *args: str) -> str | None:
+        """Read-only systemctl query. None when there is no systemctl."""
+        try:
+            r = subprocess.run(["systemctl", *args], capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return r.stdout.strip()
+
+    def ssh_state(self) -> dict:
+        """mode: none (no systemd), missing (no SSH server), boot (SSH starts at
+        boot, so it is not ours to switch) or managed."""
+        boot = self.systemctl("is-enabled", "ssh.service")
+        if boot is None:
+            return {"mode": "none"}
+        if boot in ("", "not-found"):
+            return {"mode": "missing"}
+        if boot == "enabled" or self.systemctl("is-enabled", "ssh.socket") == "enabled":
+            return {"mode": "boot"}
+        left = 0
+        try:
+            left = max(0, int(self.ssh_request.read_text().strip() or 0) - int(time.time()))
+        except (OSError, ValueError):
+            pass
+        return {"mode": "managed", "open": self.ssh_open(), "left": left,
+                "watcher": self.systemctl("is-active", "parleybox-ssh.path") == "active"}
+
+    def ssh_open(self) -> bool:
+        return self.systemctl("is-active", "ssh.service") == "active"
+
+    def request_ssh(self, until: int) -> None:
+        self.ssh_request.write_text(f"{until}\n")
 
     def csrf_token(self) -> str:
         return hmac.new(self.secret, b"quarterdeck", "sha256").hexdigest()[:32]
@@ -602,6 +643,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_html(pages.quarterdeck(
             self.cfg, info, cargo, self.app.chat.recent(100), self.app.board.threads(),
             self.app.csrf_token(), self._stats(), q.get("msg", ""), q.get("err") == "1",
+            self.app.ssh_state(),
         ), extra={"Cache-Control": "no-store, private"})
 
     def handle_quarterdeck(self, action: str):
@@ -641,10 +683,24 @@ class Handler(BaseHTTPRequestHandler):
             }
             self.app.save_overrides(values)
             msg = "Ship's articles updated."
+        elif action in ("ssh/open", "ssh/close"):
+            msg, err = self._maintenance_ssh(action == "ssh/open")
         else:
             self.error(404, "Nothing at this address.")
             return
         self.redirect(f"/quarterdeck?{'err=1&' if err else ''}msg={quote(msg)}", 303)
+
+    def _maintenance_ssh(self, want_open: bool) -> tuple[str, bool]:
+        if self.app.ssh_state()["mode"] != "managed":
+            return "SSH isn't switched from here on this box.", True
+        self.app.request_ssh(int(time.time()) + SSH_WINDOW if want_open else 0)
+        log.info("quarterdeck: SSH %s by %s", "opened" if want_open else "closed", self._client_ip())
+        # parleybox-ssh.path acts within a moment; wait so the page shows the result
+        for _ in range(40):
+            if self.app.ssh_open() == want_open:
+                return ("SSH is open for the next hour." if want_open else "SSH closed."), False
+            time.sleep(0.25)
+        return f"Asked the box to {'open' if want_open else 'close'} SSH, but it hasn't yet.", True
 
 
 def make_server(cfg: Config, dev: bool = False) -> ThreadingHTTPServer:

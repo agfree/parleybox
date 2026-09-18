@@ -4,8 +4,10 @@ import http.client
 import json
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
+from urllib.parse import unquote
 
 from parleybox.config import Config
 from parleybox.server import make_server
@@ -208,6 +210,30 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class FakeSystemd:
+    """Stands in for systemctl, and for the root-side parleybox-ssh watcher
+    reacting to the request file, so tests never query the real SSH server."""
+
+    def __init__(self, app):
+        self.app = app
+        self.reset()
+
+    def reset(self):
+        self.present, self.boot, self.watcher, self.ssh = True, "disabled", "active", "inactive"
+
+    def __call__(self, verb, unit):
+        if not self.present:
+            return None
+        if verb == "is-enabled":
+            return self.boot if unit == "ssh.service" else "disabled"
+        if unit == "parleybox-ssh.path":
+            return self.watcher
+        if self.watcher == "active" and self.app.ssh_request.exists():
+            until = int(self.app.ssh_request.read_text())
+            self.ssh = "active" if until > time.time() else "inactive"
+        return self.ssh
+
+
 class QuarterdeckTests(unittest.TestCase):
     """Separate server with the captain's password set."""
 
@@ -220,6 +246,7 @@ class QuarterdeckTests(unittest.TestCase):
                          data_dir=str(root / "data"), hostname="parleybox.test",
                          quarterdeck_password="yo-ho-ho")
         cls.server = make_server(cls.cfg, dev=False)
+        cls.systemd = cls.server.app.systemctl = FakeSystemd(cls.server.app)
         cls.port = cls.server.server_address[1]
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
         cls.auth = {"Authorization": "Basic " + base64.b64encode(b"captain:yo-ho-ho").decode()}
@@ -251,6 +278,53 @@ class QuarterdeckTests(unittest.TestCase):
         h = {"Content-Type": "application/x-www-form-urlencoded"}
         h.update(headers if headers is not None else self.auth)
         return self.req("POST", "/quarterdeck/" + action, urlencode(fields).encode(), h)
+
+    def setUp(self):
+        self.systemd.reset()
+        self.server.app.ssh_request.unlink(missing_ok=True)
+
+    def test_ssh_open_and_close(self):
+        tok, data = self.token()
+        self.assertIn(b"SSH is closed.", data)
+        r, _ = self.post("ssh/open", {"token": tok})
+        self.assertEqual(r.status, 303)
+        self.assertIn("SSH is open for the next hour.", unquote(r.getheader("Location")))
+        until = int(self.server.app.ssh_request.read_text())
+        self.assertAlmostEqual(until, time.time() + 3600, delta=5)
+        _, data = self.token()
+        self.assertIn(b"SSH is open.", data)
+        self.assertIn(b"closes by itself in 60 min", data)
+        r, _ = self.post("ssh/close", {"token": tok})
+        self.assertIn("SSH closed.", unquote(r.getheader("Location")))
+        self.assertEqual(self.server.app.ssh_request.read_text().strip(), "0")
+        _, data = self.token()
+        self.assertIn(b"SSH is closed.", data)
+
+    def test_ssh_needs_token(self):
+        r, _ = self.post("ssh/open", {"token": "wrong"})
+        self.assertIn("Stale form token", unquote(r.getheader("Location")))
+        self.assertFalse(self.server.app.ssh_request.exists())
+
+    def test_ssh_left_alone_when_enabled_at_boot(self):
+        self.systemd.boot = "enabled"
+        tok, data = self.token()
+        self.assertIn(b"SSH starts at boot", data)
+        self.assertNotIn(b"Open SSH for 1 hour", data)
+        r, _ = self.post("ssh/close", {"token": tok})
+        self.assertIn("isn't switched from here", unquote(r.getheader("Location")))
+        self.assertFalse(self.server.app.ssh_request.exists())
+
+    def test_ssh_panel_states(self):
+        self.systemd.watcher = "inactive"
+        _, data = self.token()
+        self.assertIn(b"parleybox-ssh.path unit isn&#39;t running", data)
+        self.systemd.reset()
+        self.systemd.boot = "not-found"
+        _, data = self.token()
+        self.assertIn(b"No SSH server is installed", data)
+        self.systemd.present = False
+        _, data = self.token()
+        self.assertNotIn(b"<h2>Maintenance</h2>", data)
 
     def test_auth_required(self):
         r, _ = self.req("GET", "/quarterdeck")

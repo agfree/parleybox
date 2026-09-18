@@ -39,6 +39,7 @@ a Raspberry Pi (or any Debian box) with a Wi-Fi adapter that supports AP mode.
 - **Quarterdeck** (`/quarterdeck`): the captain's page. Throw cargo overboard, delete chat
   messages or board posts, switch uploads/chat/board on and off, rename the ship and edit the
   message of the day, all from a phone. Off and hidden until `quarterdeck_password` is set.
+  It can also open SSH for an hour of maintenance, so SSH can stay closed the rest of the time.
 - **Zero dependencies**: Python 3.11+ standard library only. No pip, no database, no CDN,
   no JavaScript frameworks. Everything is served from the box.
 - Hardened a little: user content is served with `Content-Security-Policy: sandbox`,
@@ -116,6 +117,25 @@ and override the config file. Delete that file to go back to the config file's v
 The box speaks plain `http` over an open Wi-Fi network, so the password travels in the clear
 and anyone sniffing the air could grab it. Treat it as a latch, not a lock: use a throwaway
 password, and keep anything you truly care about off the box.
+
+### Maintenance SSH
+
+SSH on the box is reachable by anyone on the open Wi-Fi, so it is best kept closed. Disable it
+at boot once:
+
+```sh
+sudo systemctl disable ssh
+```
+
+From then on the Quarterdeck's **Maintenance** panel opens SSH for an hour (for an upgrade, say)
+and closes it again, by itself when the hour is up or with **Close SSH now**. A reboot also
+closes it. Closing SSH doesn't disconnect anyone already logged in. If SSH is still enabled at
+boot, the Quarterdeck leaves it alone and says so.
+
+The web server stays unprivileged: it only writes `/srv/parleybox/data/ssh-request`, and the
+root-owned `parleybox-ssh.path` unit runs `parleybox-ssh` to start or stop `ssh.service`.
+Anyone with the Quarterdeck password can open SSH, and that password isn't a secret on an
+open network, so use key-only SSH logins.
 
 ## Run it anywhere (dev mode)
 

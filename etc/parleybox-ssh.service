@@ -1,0 +1,8 @@
+[Unit]
+Description=ParleyBox maintenance SSH (open or close as the Quarterdeck asked)
+# every write to the request file starts this; don't let quick clicks trip the start limit
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/parleybox/parleybox-ssh

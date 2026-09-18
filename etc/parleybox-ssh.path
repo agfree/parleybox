@@ -1,0 +1,10 @@
+[Unit]
+Description=ParleyBox maintenance SSH requests from the Quarterdeck
+PartOf=parleybox.target
+
+[Path]
+# Written by the web server (data_dir in parleybox.conf; this assumes the default).
+PathChanged=/srv/parleybox/data/ssh-request
+
+[Install]
+WantedBy=parleybox.target

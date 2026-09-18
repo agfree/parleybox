@@ -113,5 +113,6 @@ button.tiny { padding: 2px 8px; margin: 0; font-size: 12px; }
 button.danger { background: var(--danger); color: #fff; }
 button.danger:hover { background: #ff7b7b; }
 .toggles label { display: inline-block; margin-right: 18px; color: var(--fg); }
+code { background: var(--bg); border: 1px solid var(--border); padding: 0 4px; }
 .toggles input { margin-right: 6px; }
 table.files td.act { text-align: right; white-space: nowrap; }

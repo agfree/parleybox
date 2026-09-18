@@ -313,8 +313,37 @@ def _btn(action: str, token: str, label: str, fields: dict, danger: bool = True,
             f'<button class="tiny{" danger" if danger else ""}" type="submit">{esc(label)}</button></form>')
 
 
+def _ssh_panel(ssh: dict, token: str) -> str:
+    mode = ssh.get("mode")
+    if mode in (None, "none"):
+        return ""
+    if mode == "missing":
+        body = '<p class="dim">No SSH server is installed on this box.</p>'
+    elif mode == "boot":
+        body = ('<p>SSH starts at boot on this box, so it is always open. To open it only when you '
+                'need it, run <code>sudo systemctl disable ssh</code> on the box; then switch it from here.</p>')
+    else:
+        body = ""
+        if not ssh.get("watcher"):
+            body += ('<div class="notice error">The parleybox-ssh.path unit isn&#39;t running, so these '
+                     'buttons do nothing. Re-run <code>sudo ./install.sh --upgrade</code>.</div>')
+        if ssh.get("open"):
+            mins = (ssh.get("left", 0) + 59) // 60
+            when = (f"It closes by itself in {mins} min." if mins
+                    else "It was started outside the Quarterdeck and won't close by itself.")
+            body += (f'<p><b>SSH is open.</b> {when}</p><p>'
+                     f'{_btn("/quarterdeck/ssh/open", token, "Keep open for another hour", {}, danger=False)} '
+                     f'{_btn("/quarterdeck/ssh/close", token, "Close SSH now", {})}</p>')
+        else:
+            body += ('<p>SSH is closed.</p><p>'
+                     f'{_btn("/quarterdeck/ssh/open", token, "Open SSH for 1 hour", {}, danger=False)}</p>')
+        body += ('<p class="dim small">Closing SSH leaves anyone already logged in connected. A reboot closes it too. '
+                 'The Quarterdeck password crosses the open Wi-Fi unencrypted, so use key-only SSH logins.</p>')
+    return f'<div class="panel">\n<h2>Maintenance</h2>\n{body}\n</div>\n'
+
+
 def quarterdeck(cfg, info: dict, cargo: list, chat: list, threads: list, token: str,
-                stats: dict, msg: str = "", error: bool = False) -> str:
+                stats: dict, msg: str = "", error: bool = False, ssh: dict | None = None) -> str:
     disk = info["disk"]
     stat_tiles = [
         (stats["online"], "aboard now"),
@@ -402,5 +431,6 @@ def quarterdeck(cfg, info: dict, cargo: list, chat: list, threads: list, token: 
 {cargo_html}
 {chat_html}
 {board_html}
+{_ssh_panel(ssh or {}, token)}
 """
     return layout(cfg, "Quarterdeck", body, "/quarterdeck", stats)

@@ -1,0 +1,44 @@
+#!/bin/sh
+# Open or close SSH for maintenance, as asked from the Quarterdeck.
+# Runs as root from parleybox-ssh.service whenever the web server writes the
+# request file, and again from a timer when the open window runs out.
+# The request file holds the time (epoch seconds) SSH should close; 0 = now.
+set -eu
+REQ=/srv/parleybox/data/ssh-request
+LIB=/usr/local/lib/parleybox
+MAX_WINDOW=3600
+
+# SSH that starts at boot is the admin's choice; leave it alone.
+if systemctl is-enabled -q ssh.service 2>/dev/null || systemctl is-enabled -q ssh.socket 2>/dev/null; then
+  echo "parleybox-ssh: SSH is enabled at boot; not managing it"
+  exit 0
+fi
+
+# The web user owns this file: read only a plain file, only digits, and never
+# let it hold SSH open longer than one window from now.
+until=0
+if [ -f "$REQ" ] && [ ! -L "$REQ" ]; then
+  until=$(head -c 32 "$REQ" | tr -cd 0-9 | cut -c1-12)
+fi
+until=${until:-0}
+now=$(date +%s)
+[ "$until" -le $((now + MAX_WINDOW)) ] || until=$((now + MAX_WINDOW))
+
+if systemctl -q is-active parleybox-ssh-close.timer; then
+  systemctl stop parleybox-ssh-close.timer
+fi
+if [ "$until" -gt "$now" ]; then
+  systemctl start ssh.service
+  # never leave SSH open without something scheduled to close it
+  if ! systemd-run --quiet --collect --unit=parleybox-ssh-close --on-active=$((until - now)) \
+      --timer-property=AccuracySec=5s "$LIB/parleybox-ssh"; then
+    systemctl stop ssh.service
+    echo "parleybox-ssh: couldn't schedule the close, so SSH stays closed" >&2
+    exit 1
+  fi
+  echo "parleybox-ssh: SSH open for $(( (until - now + 59) / 60 )) min"
+else
+  # stopping sshd leaves sessions that are already logged in running
+  systemctl stop ssh.service ssh.socket 2>/dev/null || true
+  echo "parleybox-ssh: SSH closed"
+fi
