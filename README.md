@@ -53,7 +53,7 @@ should list `AP`). Add a USB SSD or big SD card for the shared folder.
 ## Install on a Pi
 
 ```sh
-git clone <this repo> && cd pirate_bbs
+git clone https://github.com/agfree/parleybox && cd parleybox
 sudo ./install.sh --ssid "ParleyBox - Share Freely" --country US
 ```
 
@@ -78,6 +78,28 @@ journalctl -u parleybox -u parleybox-hostapd -u parleybox-dnsmasq -f   # logs
 sudo systemctl restart parleybox.target                                 # restart everything
 sudo ./uninstall.sh [--purge]                                           # remove
 ```
+
+## Upgrading
+
+The box doesn't need internet. Pull the new version on a laptop, join the laptop to the
+ParleyBox Wi-Fi, and copy it over SSH (the box is `192.168.77.1` unless you chose another `--ip`;
+SSH must be enabled on the box, for example with Raspberry Pi Imager's "Enable SSH" option):
+
+```sh
+git pull                                                   # on the laptop, while it has internet
+rsync -a --delete ./ you@192.168.77.1:parleybox/           # then, on the ParleyBox Wi-Fi
+ssh -t you@192.168.77.1 sudo ./parleybox/install.sh --upgrade
+```
+
+If the box has its own way online (Ethernet, a USB Ethernet adapter on a Pi Zero, or a
+second Wi-Fi adapter), `git pull` and `sudo ./install.sh --upgrade` on the box works too.
+
+`--upgrade` replaces the server code and systemd units and keeps everything else: the
+Wi-Fi, DHCP and interface settings in `/etc/parleybox/`, `parleybox.conf`, the shared files,
+chat, board and Quarterdeck settings. Only the web server restarts, so nobody is dropped
+from the Wi-Fi. The access point restarts only if a new version changes its systemd units.
+Wi-Fi settings are left exactly as they are, so changes to the config templates in a new
+version are not applied; run the installer without `--upgrade` (and your options) to re-render them.
 
 ## Configuration
 
