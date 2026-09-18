@@ -174,6 +174,18 @@ class ServerTests(unittest.TestCase):
         r, _ = self.req("GET", "/board/999")
         self.assertEqual(r.status, 404)
 
+    def test_signin_window_note(self):
+        webview = ("Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/UQ1A.240205.004; wv) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Version/4.0 Chrome/122.0.6261.119 Mobile Safari/537.36")
+        chrome = ("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
+        for path, url in (("/cargo/", b"http://parleybox.test/cargo/"), ("/board", b"http://parleybox.test/board")):
+            _, data = self.req("GET", path, headers={"User-Agent": webview})
+            self.assertIn(b"signin-note", data, path)
+            self.assertIn(url, data, path)
+            _, data = self.req("GET", path, headers={"User-Agent": chrome})
+            self.assertNotIn(b"signin-note", data, path)
+
     def test_legacy_files_path_redirects(self):
         r, _ = self.req("GET", "/files/sub/doc.txt")
         self.assertEqual(r.status, 301)

@@ -68,6 +68,7 @@ button:hover { background: #ffd966; }
 button.secondary { background: var(--border); color: var(--fg); }
 .notice { border-left: 3px solid var(--accent2); padding: 8px 12px; background: var(--panel); margin-bottom: 14px; }
 .error { border-left-color: var(--danger); }
+.notice .url { color: var(--accent); word-break: break-all; -webkit-user-select: all; user-select: all; }
 .dim { color: var(--dim); }
 .small { font-size: 13px; }
 progress { width: 100%; height: 14px; margin-top: 8px; }

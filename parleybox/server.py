@@ -205,6 +205,12 @@ class Handler(BaseHTTPRequestHandler):
     def _stats(self) -> dict:
         return self.app.visitors.stats()
 
+    def _in_signin_window(self) -> bool:
+        """Android opens the portal in its "Sign in to network" window, a bare
+        WebView ("; wv)" in the User-Agent) that can't open a file picker."""
+        ua = self.headers.get("User-Agent", "")
+        return "Android" in ua and "; wv)" in ua
+
     def _query(self) -> dict:
         return {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
 
@@ -242,7 +248,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"messages": msgs, "last_id": self.app.chat.last_id()})
             elif path == "/board" and self.cfg.board_enabled:
                 self.send_html(pages.board_index(self.cfg, self.app.board.threads(), self._stats(),
-                                                 q.get("msg", ""), q.get("err") == "1"))
+                                                 q.get("msg", ""), q.get("err") == "1",
+                                                 self._in_signin_window()))
             elif path.startswith("/board/") and self.cfg.board_enabled:
                 self.serve_thread(path[len("/board/"):], q)
             elif path.startswith("/board-img/") and self.cfg.board_enabled:
@@ -327,7 +334,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             entries.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
             self.send_html(pages.cargo_listing(self.cfg, rel.strip("/"), entries, self._stats(),
-                                              q.get("msg", ""), q.get("err") == "1"))
+                                              q.get("msg", ""), q.get("err") == "1",
+                                              self._in_signin_window()))
         else:
             self.send_file(target, sandbox=True)
 
@@ -504,7 +512,8 @@ class Handler(BaseHTTPRequestHandler):
         if t is None:
             self.error(404, "No such thread.")
             return
-        self.send_html(pages.board_thread(self.cfg, t, self._stats(), q.get("msg", ""), q.get("err") == "1"))
+        self.send_html(pages.board_thread(self.cfg, t, self._stats(), q.get("msg", ""), q.get("err") == "1",
+                                          self._in_signin_window()))
 
     def handle_board_post(self, thread_id: int | None):
         back = "/board" if thread_id is None else f"/board/{thread_id}"

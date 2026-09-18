@@ -113,7 +113,18 @@ def home(cfg, stats: dict, msg: str = "") -> str:
     return layout(cfg, "Deck", body, "/", stats)
 
 
-def parley_form(cfg, msg: str = "", error: bool = False) -> str:
+def _signin_note(cfg, path: str) -> str:
+    """Android's "Sign in to network" window ignores file inputs, so point
+    people at their real browser instead."""
+    return (
+        '<div class="notice signin-note">Nothing happens when you tap the file button? You are in the '
+        "Wi-Fi sign-in window, which can't open the file picker. Close it (stay on the Wi-Fi), open "
+        f'your browser and go to <b class="url">{esc(f"http://{cfg.hostname}{path}")}</b>. '
+        "If it won't load, turn off mobile data.</div>"
+    )
+
+
+def parley_form(cfg, msg: str = "", error: bool = False, signin: bool = False) -> str:
     if not cfg.uploads_enabled:
         return _flash(msg, error)
     return f"""
@@ -121,6 +132,7 @@ def parley_form(cfg, msg: str = "", error: bool = False) -> str:
 <h2>Parley</h2>
 <p class="dim small">Bring cargo aboard for everyone within range.</p>
 {_flash(msg, error)}
+{_signin_note(cfg, "/cargo/") if signin else ""}
 <form id="upload-form" method="post" action="/parley" enctype="multipart/form-data">
 <label>Cargo (up to {cfg.max_upload_mb} MB per parley)</label>
 <input type="file" name="file" multiple required>
@@ -133,7 +145,8 @@ def parley_form(cfg, msg: str = "", error: bool = False) -> str:
 """
 
 
-def cargo_listing(cfg, rel: str, entries: list, stats: dict, msg: str = "", error: bool = False) -> str:
+def cargo_listing(cfg, rel: str, entries: list, stats: dict, msg: str = "", error: bool = False,
+                  signin: bool = False) -> str:
     parts = [p for p in rel.split("/") if p]
     crumbs = ['<a href="/cargo/">cargo</a>']
     acc = ""
@@ -160,7 +173,7 @@ def cargo_listing(cfg, rel: str, entries: list, stats: dict, msg: str = "", erro
 <tr><th>Name</th><th>Size</th><th class="time">Stowed</th></tr>
 {"".join(rows)}
 </table>
-{parley_form(cfg, msg, error)}
+{parley_form(cfg, msg, error, signin)}
 """
     return layout(cfg, "Cargo", body, "/cargo/", stats, scripts=("upload.js",))
 
@@ -201,9 +214,13 @@ def _post_html(p: dict) -> str:
     )
 
 
-def _post_form(cfg, action: str, thread: bool) -> str:
+def _post_form(cfg, action: str, thread: bool, signin: bool = False) -> str:
     subj = '<label>Subject</label><input type="text" name="subject" maxlength="100" required>' if thread else ""
-    img = '<label>Image (optional, max 8 MB)</label><input type="file" name="image" accept="image/*">' if cfg.board_images else ""
+    img = ""
+    if cfg.board_images:
+        img = '<label>Image (optional, max 8 MB)</label><input type="file" name="image" accept="image/*">'
+        if signin:
+            img = _signin_note(cfg, action) + img
     return f"""
 <div class="panel">
 <h2>{"Start a thread" if thread else "Reply"}</h2>
@@ -218,7 +235,8 @@ def _post_form(cfg, action: str, thread: bool) -> str:
 """
 
 
-def board_index(cfg, threads: list, stats: dict, msg: str = "", error: bool = False) -> str:
+def board_index(cfg, threads: list, stats: dict, msg: str = "", error: bool = False,
+                signin: bool = False) -> str:
     items = []
     for t in threads:
         op = t["posts"][0]
@@ -237,19 +255,20 @@ def board_index(cfg, threads: list, stats: dict, msg: str = "", error: bool = Fa
 <h1>Message board</h1>
 {_flash(msg, error)}
 {"".join(items)}
-{_post_form(cfg, "/board", thread=True)}
+{_post_form(cfg, "/board", thread=True, signin=signin)}
 """
     return layout(cfg, "Board", body, "/board", stats)
 
 
-def board_thread(cfg, t: dict, stats: dict, msg: str = "", error: bool = False) -> str:
+def board_thread(cfg, t: dict, stats: dict, msg: str = "", error: bool = False,
+                 signin: bool = False) -> str:
     posts = "".join(_post_html(p) for p in t["posts"])
     body = f"""
 <div class="crumbs"><a href="/board">board</a> / {esc(t["subject"])}</div>
 <h1>{esc(t["subject"])}</h1>
 {_flash(msg, error)}
 <div class="thread">{posts}</div>
-{_post_form(cfg, f"/board/{t['id']}", thread=False)}
+{_post_form(cfg, f"/board/{t['id']}", thread=False, signin=signin)}
 """
     return layout(cfg, t["subject"], body, "/board", stats)
 
