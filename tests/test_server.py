@@ -97,6 +97,16 @@ class ServerTests(unittest.TestCase):
         r, _ = self.req("GET", "/cargo/sub")
         self.assertEqual(r.status, 301)
 
+    def test_drive_clutter_hidden(self):
+        junk = self.cfg.share_path / "System Volume Information"
+        junk.mkdir(exist_ok=True)
+        (junk / "IndexerVolumeGuid").write_text("x")
+        (self.cfg.share_path / "Thumbs.db").write_text("x")
+        r, data = self.req("GET", "/cargo/")
+        self.assertNotIn(b"System Volume", data)
+        self.assertNotIn(b"Thumbs.db", data)
+        self.assertNotIn("IndexerVolumeGuid", [e["rel"].split("/")[-1] for e in self.server.app.cargo_index()[0]])
+
     def test_user_html_is_sandboxed(self):
         r, _ = self.req("GET", "/cargo/page.html")
         self.assertEqual(r.status, 200)
@@ -366,6 +376,23 @@ class QuarterdeckTests(unittest.TestCase):
         # traversal and missing files are refused
         r, _ = self.post("cargo/delete", {"token": tok, "path": "../../etc/passwd"})
         self.assertIn("err=1", r.getheader("Location"))
+
+    def test_overboard_refused_on_read_only_shelf(self):
+        import os
+        shelf = self.cfg.share_path / "usb-STICK"
+        shelf.mkdir()
+        (shelf / "map.txt").write_text("x")
+        tok, _ = self.token()
+        os.chmod(shelf, 0o555)  # stands in for a read-only mount
+        try:
+            if os.access(shelf, os.W_OK):
+                self.skipTest("running as root; permissions don't bite")
+            r, _ = self.post("cargo/delete", {"token": tok, "path": "usb-STICK/map.txt"})
+            self.assertIn("err=1", r.getheader("Location"))
+            self.assertIn("remove%20it%20there", r.getheader("Location"))
+            self.assertTrue((shelf / "map.txt").exists())
+        finally:
+            os.chmod(shelf, 0o755)
 
     def test_chat_moderation(self):
         app = self.server.app

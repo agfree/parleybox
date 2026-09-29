@@ -40,6 +40,14 @@ CAPTIVE_PATHS = {
 IMAGE_TYPES = {
     "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp",
 }
+# what Windows puts on every drive it touches; dotfiles (macOS's) are hidden anyway
+HIDDEN_NAMES = {"System Volume Information", "$RECYCLE.BIN", "RECYCLER", "Thumbs.db", "desktop.ini"}
+
+
+def hidden(name: str) -> bool:
+    return name.startswith(".") or name.endswith(".part") or name in HIDDEN_NAMES
+
+
 BOARD_IMAGE_MAX = 8 * 1024 * 1024
 FORM_FIELD_MAX = 64 * 1024
 DISK_RESERVE = 256 * 1024 * 1024  # uploads never take the last of the disk
@@ -159,9 +167,9 @@ class App:
         root = self.cfg.share_path
         items = []
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            dirnames[:] = [d for d in dirnames if not hidden(d)]
             for fn in filenames:
-                if fn.startswith(".") or fn.endswith(".part"):
+                if hidden(fn):
                     continue
                 fp = Path(dirpath) / fn
                 try:
@@ -385,7 +393,7 @@ class Handler(BaseHTTPRequestHandler):
             entries = []
             try:
                 for e in os.scandir(target):
-                    if e.name.startswith(".") or e.name.endswith(".part"):
+                    if hidden(e.name):
                         continue
                     try:
                         st = e.stat()
@@ -698,10 +706,16 @@ class Handler(BaseHTTPRequestHandler):
             if target is None or not target.is_file():
                 msg, err = "No such cargo.", True
             else:
-                target.unlink()
-                self.app.stats.forget(rel)
-                log.info("quarterdeck: %s thrown overboard by %s", rel, self._client_ip())
-                msg = f"{rel} thrown overboard."
+                try:
+                    target.unlink()
+                except OSError as e:
+                    # sd-card/ and usb-*/ shelves are mounted read-only
+                    msg, err = (f"{rel} can't be thrown overboard ({e.strerror}). If it is on the SD card "
+                                "or a USB drive, remove it there."), True
+                else:
+                    self.app.stats.forget(rel)
+                    log.info("quarterdeck: %s thrown overboard by %s", rel, self._client_ip())
+                    msg = f"{rel} thrown overboard."
         elif action == "chat/delete":
             ok = form.get("id", "").isdigit() and self.app.chat.delete(int(form["id"]))
             msg, err = ("Message deleted.", False) if ok else ("No such message.", True)

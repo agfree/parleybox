@@ -1,0 +1,8 @@
+# ParleyBox: put USB drives, and any partition labeled PARLEYCARGO, on a
+# read-only shelf in the cargo hold (see parleybox-shelf@.service).
+ACTION!="add", GOTO="parleybox_shelf_end"
+SUBSYSTEM!="block", GOTO="parleybox_shelf_end"
+ENV{ID_FS_USAGE}!="filesystem", GOTO="parleybox_shelf_end"
+ENV{ID_BUS}=="usb", TAG+="systemd", ENV{SYSTEMD_WANTS}+="parleybox-shelf@%k.service"
+ENV{ID_FS_LABEL}=="PARLEYCARGO", TAG+="systemd", ENV{SYSTEMD_WANTS}+="parleybox-shelf@%k.service"
+LABEL="parleybox_shelf_end"

@@ -96,6 +96,7 @@ cp -r "$SRC/parleybox" "$LIB/parleybox"
 find "$LIB/parleybox" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 install -m 755 "$SRC/bin/parleybox-net" "$LIB/parleybox-net"
 install -m 755 "$SRC/bin/parleybox-ssh" "$LIB/parleybox-ssh"
+install -m 755 "$SRC/bin/parleybox-shelf" "$LIB/parleybox-shelf"
 revision > "$LIB/REVISION"
 if [ ! -f "$ETC/parleybox.conf" ]; then
   install -m 644 "$SRC/etc/parleybox.conf" "$ETC/parleybox.conf"
@@ -107,6 +108,28 @@ install -m 644 "$SRC/etc/parleybox.service" /etc/systemd/system/parleybox.servic
 install -m 644 "$SRC/etc/parleybox.target" /etc/systemd/system/parleybox.target
 install -m 644 "$SRC/etc/parleybox-ssh.path" /etc/systemd/system/parleybox-ssh.path
 install -m 644 "$SRC/etc/parleybox-ssh.service" /etc/systemd/system/parleybox-ssh.service
+install -m 644 "$SRC/etc/parleybox-shelf@.service" /etc/systemd/system/parleybox-shelf@.service
+install -m 644 "$SRC/etc/90-parleybox-shelf.rules" /etc/udev/rules.d/90-parleybox-shelf.rules
+
+# The SD card's boot partition is FAT, so any computer can open it: its cargo/
+# folder becomes a read-only shelf in the hold (sd-card/).
+BOOT=
+for d in /boot/firmware /boot; do
+  if [ "$(findmnt -rno FSTYPE "$d" 2>/dev/null)" = vfat ]; then BOOT=$d; break; fi
+done
+if [ -n "$BOOT" ]; then
+  sed "s|@BOOT@|$BOOT|g" "$SRC/etc/parleybox-sdcard.service" > /etc/systemd/system/parleybox-sdcard.service
+  if [ ! -e "$BOOT/cargo" ]; then
+    mkdir "$BOOT/cargo"
+    cat > "$BOOT/cargo/README.txt" <<TXT
+Files you put in this folder show up in the ParleyBox cargo hold, under
+sd-card/, for anyone on the Wi-Fi to download. Shut the box down before you
+take the card out, add files here from any computer, then put the card back.
+Space is limited to what is free on this small partition; for more, use a USB
+drive (any drive plugged into the box shows up as usb-<name>/).
+TXT
+  fi
+fi
 if [ ! -e "$SRV/share/README.txt" ]; then
   cat > "$SRV/share/README.txt" <<TXT
 This is the cargo hold of a ParleyBox.
@@ -199,6 +222,10 @@ if [ $NETWORK -eq 1 ]; then
   systemctl enable parleybox-net.service parleybox-hostapd.service parleybox-dnsmasq.service
 fi
 systemctl enable parleybox.service parleybox-ssh.path
+[ -z "$BOOT" ] || systemctl enable parleybox-sdcard.service
+# shelve USB drives that are already plugged in
+udevadm control --reload 2>/dev/null || true
+udevadm trigger --action=add --subsystem-match=block 2>/dev/null || true
 if [ $UPGRADE -eq 0 ]; then
   systemctl restart parleybox.target
 elif [ "$(net_units)" != "$OLD_UNITS" ]; then
@@ -209,6 +236,7 @@ else
 fi
 # lets the Quarterdeck switch SSH on and off (only if SSH isn't enabled at boot)
 systemctl restart parleybox-ssh.path
+[ -z "$BOOT" ] || systemctl restart parleybox-sdcard.service
 
 sleep 2
 say "Status"
@@ -219,6 +247,7 @@ if [ $UPGRADE -eq 1 ]; then
   echo "  Upgraded:      $OLD_REV -> $(cat "$LIB/REVISION")"
 fi
 echo "  Shared files:  $SRV/share   (uploads in $SRV/share/uploads)"
+[ -z "$BOOT" ] || echo "  SD card shelf: $BOOT/cargo   (the card's FAT partition; any computer can add files)"
 echo "  Config:        $ETC/parleybox.conf   (set quarterdeck_password to enable the admin page)"
 echo "  Logs:          journalctl -u parleybox -u parleybox-hostapd -u parleybox-dnsmasq -f"
 if [ $NETWORK -eq 1 ] && [ $UPGRADE -eq 0 ]; then

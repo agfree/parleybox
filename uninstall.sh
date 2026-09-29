@@ -8,6 +8,10 @@ PURGE=0; [ "${1:-}" = "--purge" ] && PURGE=1
 systemctl disable --now parleybox.target parleybox.service parleybox-hostapd.service \
   parleybox-dnsmasq.service parleybox-net.service parleybox-ssh.path 2>/dev/null || true
 systemctl stop parleybox-ssh-close.timer 2>/dev/null || true
+systemctl disable --now parleybox-sdcard.service 2>/dev/null || true
+systemctl stop 'parleybox-shelf@*.service' 2>/dev/null || true
+rm -f /etc/udev/rules.d/90-parleybox-shelf.rules
+udevadm control --reload 2>/dev/null || true
 rm -f /etc/systemd/system/parleybox.target /etc/systemd/system/parleybox*.service /etc/systemd/system/parleybox-ssh.path
 systemctl daemon-reload
 rm -f /etc/NetworkManager/conf.d/parleybox.conf

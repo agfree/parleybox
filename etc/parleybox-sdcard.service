@@ -1,0 +1,19 @@
+[Unit]
+Description=ParleyBox cargo shelf from the SD card's boot partition
+# The folder any computer can see when the card is plugged into it; shown
+# read-only in the cargo hold as /cargo/sd-card/.
+ConditionPathIsDirectory=@BOOT@/cargo
+RequiresMountsFor=@BOOT@ /srv/parleybox/share
+Before=parleybox.service
+PartOf=parleybox.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/mkdir -p /srv/parleybox/share/sd-card
+ExecStart=/bin/mount --bind -o ro @BOOT@/cargo /srv/parleybox/share/sd-card
+ExecStop=/bin/umount -l /srv/parleybox/share/sd-card
+ExecStopPost=-/bin/rmdir /srv/parleybox/share/sd-card
+
+[Install]
+WantedBy=parleybox.target

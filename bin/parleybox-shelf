@@ -1,0 +1,56 @@
+#!/bin/sh
+# Mount a USB drive, or a partition labeled PARLEYCARGO, read-only as a shelf
+# in the cargo hold (or take it down again). Runs as root from
+# parleybox-shelf@<dev>.service, which udev starts when the device appears
+# and systemd stops when it goes away.
+#
+#   parleybox-shelf mount|unmount sda1
+set -eu
+SHARE=${PARLEYBOX_SHARE:-/srv/parleybox/share}
+RUN=/run/parleybox-shelf
+DEV=/dev/$2
+mkdir -p "$RUN"
+
+case "$1" in
+  mount)
+    # mounted already (a USB-booted Pi's own disk, or someone's own mount): not ours
+    if findmnt -rn -S "$DEV" >/dev/null; then
+      echo "parleybox-shelf: $DEV is already mounted; leaving it alone"
+      exit 0
+    fi
+    TYPE=$(blkid -s TYPE -o value "$DEV" || true)
+    LABEL=$(blkid -s LABEL -o value "$DEV" || true)
+    case "$TYPE" in
+      vfat|exfat|ext2|ext3|ext4) ;;
+      ntfs) TYPE=ntfs3 ;;
+      *) echo "parleybox-shelf: $DEV holds '${TYPE:-nothing}', which isn't shelved"; exit 0 ;;
+    esac
+    # the label becomes a folder name visitors see: keep it plain
+    SAFE=$(printf '%s' "$LABEL" | tr -cs 'A-Za-z0-9._-' '-' | cut -c1-32 | sed -e 's/^[-.]*//' -e 's/[-.]*$//')
+    case "$2" in
+      mmcblk*) NAME=sd-${SAFE:-$2} ;;
+      *) NAME=usb-${SAFE:-$2} ;;
+    esac
+    [ ! -e "$SHARE/$NAME" ] || NAME=$NAME-$2
+    OPTS=ro,nosuid,nodev,noexec
+    case "$TYPE" in vfat|exfat|ntfs3) OPTS=$OPTS,iocharset=utf8 ;; esac  # else non-ASCII names come out mangled
+    mkdir "$SHARE/$NAME"
+    if ! mount -t "$TYPE" -o "$OPTS" "$DEV" "$SHARE/$NAME"; then
+      rmdir "$SHARE/$NAME"
+      exit 1
+    fi
+    echo "$NAME" > "$RUN/$2"
+    echo "parleybox-shelf: $DEV ($TYPE${LABEL:+, \"$LABEL\"}) is on the shelf as /cargo/$NAME/"
+    ;;
+  unmount)
+    [ -f "$RUN/$2" ] || exit 0
+    NAME=$(cat "$RUN/$2")
+    # the drive may already be gone, so don't wait on it
+    umount -l "$SHARE/$NAME" 2>/dev/null || true
+    rmdir "$SHARE/$NAME" 2>/dev/null || true
+    rm -f "$RUN/$2"
+    echo "parleybox-shelf: /cargo/$NAME/ taken down"
+    ;;
+  *)
+    echo "usage: $0 mount|unmount <device>" >&2; exit 2 ;;
+esac

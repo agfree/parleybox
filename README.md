@@ -70,6 +70,8 @@ The installer:
 3. tells NetworkManager (or dhcpcd) to leave the Wi-Fi interface alone;
 4. installs and starts four systemd units grouped under `parleybox.target`:
    `parleybox-net` (static IP), `parleybox-hostapd`, `parleybox-dnsmasq`, `parleybox` (web).
+5. adds a udev rule that shelves USB drives, and a `cargo` folder on the SD card's boot partition
+   (see [Stocking the hold](#stocking-the-hold-without-ssh)).
 
 **The Wi-Fi interface becomes the access point**, so manage the Pi over Ethernet or a second adapter.
 If you run the installer over SSH on that same Wi-Fi, it warns you and counts down before
@@ -79,7 +81,31 @@ Press Enter, `~`, `.` to close the frozen session, then join the new network.
 Use `--no-network` to install only the web server (for example to serve it on your LAN).
 
 Shared files live in `/srv/parleybox/share`; uploads go to `/srv/parleybox/share/uploads`.
-Drop files there with `scp` or a USB drive. Chat and board state live in `/srv/parleybox/data`.
+Chat and board state live in `/srv/parleybox/data`.
+
+### Stocking the hold without SSH
+
+Besides uploads and `scp`, there are three ways to bring cargo aboard from any computer.
+All three show up in the hold read-only, so visitors can download them but not change them:
+
+- **The SD card.** Windows and macOS can't read the Pi's Linux partition, but they can read its
+  small FAT boot partition (`bootfs`). The installer makes a `cargo` folder there. Shut the box
+  down, put the card in your computer, copy files into `bootfs/cargo/`, eject it, and put it
+  back. The files appear under `sd-card/`. Space is whatever the boot partition has free,
+  usually a few hundred MB.
+- **A USB drive.** Plug in any FAT, exFAT, NTFS or ext4 drive and it appears as `usb-<label>/`
+  within a second or two. Pull it out and it disappears. On a Pi Zero this needs a USB OTG adapter.
+- **A `PARLEYCARGO` partition.** For lots of space on the card itself, add a partition labeled
+  `PARLEYCARGO` (exFAT is readable everywhere) and it appears as `sd-PARLEYCARGO/`. The installer
+  won't repartition a running card, so do it with the card in another Linux machine: in GParted,
+  shrink `rootfs` and create the exFAT partition in the space that frees up. Windows and macOS then
+  show it as a drive of its own when the card is plugged in. A USB drive labeled `PARLEYCARGO` works too.
+
+The USB and partition shelves are mounted by `parleybox-shelf@<device>.service`, started from a
+udev rule. The SD card folder is bind-mounted by `parleybox-sdcard.service`. A drive already
+mounted elsewhere (such as the disk a USB-booted Pi runs from) is left alone. Windows' and macOS's
+housekeeping files (`System Volume Information`, `.Spotlight-V100`, ...) are hidden. To remove
+cargo from a shelf, delete it on the card or drive; the Quarterdeck can't.
 
 ```sh
 journalctl -u parleybox -u parleybox-hostapd -u parleybox-dnsmasq -f   # logs
@@ -174,6 +200,7 @@ every offline portal makes. The About page tells visitors to use `http://`.
 parleybox/        Python package (server, multipart parser, stores, pages, web assets)
 etc/              config and systemd unit templates
 bin/parleybox-net interface bring-up script
+bin/parleybox-shelf mounts USB drives / PARLEYCARGO read-only in the hold
 install.sh        Debian/Raspberry Pi OS installer
 uninstall.sh
 tests/            unittest suite

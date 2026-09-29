@@ -1,0 +1,12 @@
+[Unit]
+Description=ParleyBox cargo shelf on /dev/%I
+# started by 90-parleybox-shelf.rules; stops (and unmounts) when the drive is pulled
+BindsTo=dev-%i.device
+After=dev-%i.device
+RequiresMountsFor=/srv/parleybox/share
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/parleybox/parleybox-shelf mount %I
+ExecStop=/usr/local/lib/parleybox/parleybox-shelf unmount %I
