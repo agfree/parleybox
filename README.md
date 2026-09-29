@@ -32,12 +32,13 @@ a Raspberry Pi (or any Debian box) with a Wi-Fi adapter that supports AP mode.
   Firefox and NetworkManager, plus the RFC 8910 DHCP option, so phones pop the portal automatically.
 - **Cargo hold** (`/cargo/`): browse and download the shared folder, with HTTP range support so videos seek.
 - **Parley** (uploads): streamed straight to disk with a progress bar, size limits, filename sanitizing,
-  and no memory blow-up on a 512 MB Pi.
+  and no memory blow-up on a 512 MB Pi. The cap (`max_upload_mb`, 2 GB by default, 0 for none) is set
+  in the config or on the Quarterdeck, and uploads that would nearly fill the disk are refused.
 - **Chat / shoutbox**: anonymous, long-polling, survives reboots.
 - **Message board**: anonymous threads and replies with optional image attachments.
 - **Aboard counter**: how many people are aboard now and how many have ever come aboard.
 - **Quarterdeck** (`/quarterdeck`): the captain's page. Throw cargo overboard, delete chat
-  messages or board posts, switch uploads/chat/board on and off, rename the ship and edit the
+  messages or board posts, switch uploads/chat/board on and off, set the upload cap, rename the ship and edit the
   message of the day, all from a phone. Off and hidden until `quarterdeck_password` is set.
   It can also open SSH for an hour of maintenance, so SSH can stay closed the rest of the time.
 - **Zero dependencies**: Python 3.11+ standard library only. No pip, no database, no CDN,

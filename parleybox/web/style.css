@@ -54,11 +54,11 @@ table.files td.size { text-align: right; }
 table.files tr:hover td { background: #1a1f26; }
 .crumbs { color: var(--dim); margin-bottom: 10px; word-break: break-all; }
 form label { display: block; color: var(--dim); font-size: 13px; margin: 8px 0 3px; }
-input[type=text], textarea, input[type=file] {
+input[type=text], input[type=number], textarea, input[type=file] {
   width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--border);
   padding: 8px; font: inherit;
 }
-input[type=text]:focus, textarea:focus { outline: none; border-color: var(--accent); }
+input[type=text]:focus, input[type=number]:focus, textarea:focus { outline: none; border-color: var(--accent); }
 textarea { min-height: 90px; resize: vertical; }
 button, input[type=submit] {
   background: var(--accent); color: #000; border: 0; padding: 8px 16px; font: inherit;

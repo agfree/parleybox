@@ -83,6 +83,13 @@ def layout(cfg, title: str, body: str, active: str = "", stats: dict | None = No
 """
 
 
+def upload_cap(cfg) -> str:
+    """How much one parley may carry, for the UI."""
+    if cfg.max_upload_bytes:
+        return f"up to {human_size(cfg.max_upload_bytes)}"
+    return "as much as the hold has room for"
+
+
 def _flash(msg: str, error: bool = False) -> str:
     if not msg:
         return ""
@@ -94,7 +101,7 @@ def home(cfg, stats: dict, msg: str = "") -> str:
         ("/cargo/", "Cargo hold", "Browse what others have brought aboard."),
     ]
     if cfg.uploads_enabled:
-        cards.append(("/cargo/#parley", "Parley", f"Share cargo of your own. Up to {cfg.max_upload_mb} MB a go."))
+        cards.append(("/cargo/#parley", "Parley", f"Share cargo of your own, {upload_cap(cfg)} a go."))
     if cfg.chat_enabled:
         cards.append(("/chat", "Chat", "Talk with whoever is aboard right now."))
     if cfg.board_enabled:
@@ -134,7 +141,7 @@ def parley_form(cfg, msg: str = "", error: bool = False, signin: bool = False) -
 {_flash(msg, error)}
 {_signin_note(cfg, "/cargo/") if signin else ""}
 <form id="upload-form" method="post" action="/parley" enctype="multipart/form-data">
-<label>Cargo (up to {cfg.max_upload_mb} MB per parley)</label>
+<label>Cargo ({upload_cap(cfg)} per parley, all files together)</label>
 <input type="file" name="file" multiple required>
 <button type="submit">Parley</button>
 <progress id="upload-progress" value="0" max="100" style="display:none"></progress>
@@ -366,6 +373,7 @@ def quarterdeck(cfg, info: dict, cargo: list, chat: list, threads: list, token: 
 <form method="post" action="/quarterdeck/settings">
 <input type="hidden" name="token" value="{esc(token)}">
 <div class="toggles">{chk("uploads_enabled", cfg.uploads_enabled)}{chk("chat_enabled", cfg.chat_enabled)}{chk("board_enabled", cfg.board_enabled)}</div>
+<label>Largest parley, in MB (0 = as much as fits; {human_size(info["upload_room"])} fits now)</label><input type="number" name="max_upload_mb" min="0" value="{esc(cfg.max_upload_mb)}">
 <label>Ship's name</label><input type="text" name="site_name" maxlength="40" value="{esc(cfg.site_name)}">
 <label>Message of the day</label><textarea name="motd" maxlength="2000">{esc(cfg.motd)}</textarea>
 <button type="submit">Save</button>

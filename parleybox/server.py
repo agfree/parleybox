@@ -19,7 +19,7 @@ from . import pages
 from .config import Config
 from .multipart import MultipartError, MultipartReader, parse_boundary
 from .store import BoardStore, ChatStore, VisitorStore
-from .util import clip, sanitize_filename, unique_path
+from .util import clip, human_size, sanitize_filename, unique_path
 
 log = logging.getLogger("parleybox")
 
@@ -41,6 +41,7 @@ IMAGE_TYPES = {
 }
 BOARD_IMAGE_MAX = 8 * 1024 * 1024
 FORM_FIELD_MAX = 64 * 1024
+DISK_RESERVE = 256 * 1024 * 1024  # uploads never take the last of the disk
 SSH_WINDOW = 3600  # how long "Open SSH" keeps it open; parleybox-ssh caps it at this too
 
 
@@ -65,7 +66,7 @@ class App:
         self._apply_overrides()
 
     # -- quarterdeck ------------------------------------------------------
-    OVERRIDABLE = ("uploads_enabled", "chat_enabled", "board_enabled", "site_name", "motd")
+    OVERRIDABLE = ("uploads_enabled", "chat_enabled", "board_enabled", "max_upload_mb", "site_name", "motd")
 
     def _apply_overrides(self) -> None:
         """Runtime settings changed from the Quarterdeck persist in the data dir,
@@ -170,9 +171,21 @@ class App:
         return {
             "cargo_count": total, "cargo_bytes": sum(e["size"] for e in cargo),
             "disk": {"total": usage.total, "free": usage.free},
+            "upload_room": self.upload_room(),
             "chat_count": self.chat.count(), "threads": threads, "posts": posts,
             "uptime": f"{d}d {h}h {m}m" if d else f"{h}h {m}m",
         }
+
+    def upload_room(self) -> int:
+        """Bytes one parley may bring aboard: the captain's cap, or less when
+        the disk is nearly full."""
+        try:
+            free = shutil.disk_usage(self.cfg.upload_path).free
+        except OSError:
+            free = 0
+        room = max(free - DISK_RESERVE, 0)
+        cap = self.cfg.max_upload_bytes
+        return min(cap, room) if cap else room
 
     def host_ok(self, host: str) -> bool:
         if self.dev or not self.cfg.captive_portal:
@@ -461,7 +474,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             raise MultipartError("Content-Length required")
         if length > max_bytes:
-            raise MultipartError(f"upload too large (limit {max_bytes // (1024 * 1024)} MB)")
+            raise MultipartError(f"upload too large (limit {human_size(max_bytes)})")
         return MultipartReader(self.rfile, boundary, length)
 
     def handle_upload(self):
@@ -470,7 +483,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         ajax = self.headers.get("X-Requested-With") == "XMLHttpRequest"
         try:
-            reader = self._multipart(self.cfg.max_upload_bytes + FORM_FIELD_MAX)
+            room = self.app.upload_room()
+            if room <= 0:
+                raise MultipartError("the hold is full: no room for more cargo")
+            reader = self._multipart(room + FORM_FIELD_MAX)
         except MultipartError as e:
             self.close_connection = True
             if ajax:
@@ -495,7 +511,7 @@ class Handler(BaseHTTPRequestHandler):
                 with tmp.open("wb") as out:
                     for chunk in part.chunks():
                         written += len(chunk)
-                        if written > self.cfg.max_upload_bytes:
+                        if written > room:
                             raise MultipartError("file exceeds upload limit")
                         out.write(chunk)
                 dest = unique_path(upload_dir, name)
@@ -678,6 +694,8 @@ class Handler(BaseHTTPRequestHandler):
                 "uploads_enabled": form.get("uploads_enabled") == "1",
                 "chat_enabled": form.get("chat_enabled") == "1",
                 "board_enabled": form.get("board_enabled") == "1",
+                "max_upload_mb": (int(form["max_upload_mb"]) if form.get("max_upload_mb", "").isdigit()
+                                  else self.cfg.max_upload_mb),
                 "site_name": clip(form.get("site_name", ""), 40) or self.cfg.site_name,
                 "motd": form.get("motd", "").replace("\r", "").strip()[:2000] or self.cfg.motd,
             }

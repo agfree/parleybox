@@ -139,6 +139,19 @@ class ServerTests(unittest.TestCase):
         r, _ = self.req("POST", "/parley", body, {"Content-Type": ctype})
         self.assertEqual(r.status, 400)
 
+    def test_upload_refused_when_disk_full(self):
+        import parleybox.server as srv
+        body, ctype = multipart({}, {"file": ("full.bin", b"x" * 1000, "application/octet-stream")})
+        old = srv.DISK_RESERVE
+        srv.DISK_RESERVE = 10**18
+        try:
+            r, data = self.req("POST", "/parley", body, {"Content-Type": ctype, "X-Requested-With": "XMLHttpRequest"})
+        finally:
+            srv.DISK_RESERVE = old
+        self.assertEqual(r.status, 413)
+        self.assertIn(b"hold is full", data)
+        self.assertFalse((self.cfg.upload_path / "full.bin").exists())
+
     def test_chat(self):
         r, data = self.req("POST", "/api/chat", b"name=a%3Cb&text=hi+%3Cthere%3E",
                            {"Content-Type": "application/x-www-form-urlencoded"})
@@ -393,3 +406,21 @@ class QuarterdeckTests(unittest.TestCase):
         self.assertFalse(fresh.cfg.uploads_enabled)
         self.post("settings", {"token": tok, "uploads_enabled": "1", "chat_enabled": "1", "board_enabled": "1"})
         self.assertTrue(self.cfg.uploads_enabled)
+
+    def test_upload_cap_from_quarterdeck(self):
+        tok, data = self.token()
+        self.assertIn(b'name="max_upload_mb"', data)
+        self.post("settings", {"token": tok, "uploads_enabled": "1", "chat_enabled": "1", "board_enabled": "1",
+                               "max_upload_mb": "0"})
+        self.assertEqual(self.cfg.max_upload_mb, 0)
+        r, data = self.req("GET", "/cargo/")
+        self.assertIn(b"as much as the hold has room for", data)
+        self.assertLess(self.server.app.upload_room(), 10**15)  # still bounded by the disk
+        # a blank or junk value keeps the current cap
+        self.post("settings", {"token": tok, "uploads_enabled": "1", "chat_enabled": "1", "board_enabled": "1",
+                               "max_upload_mb": "lots"})
+        self.assertEqual(self.cfg.max_upload_mb, 0)
+        self.post("settings", {"token": tok, "uploads_enabled": "1", "chat_enabled": "1", "board_enabled": "1",
+                               "max_upload_mb": "4096"})
+        r, data = self.req("GET", "/cargo/")
+        self.assertIn(b"up to 4.0 GB per parley", data)

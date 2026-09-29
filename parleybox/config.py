@@ -51,7 +51,8 @@ class Config:
 
     @property
     def max_upload_bytes(self) -> int:
-        return int(self.max_upload_mb) * 1024 * 1024
+        """0 = no cap beyond the free space on the disk."""
+        return max(int(self.max_upload_mb), 0) * 1024 * 1024
 
     def ensure_dirs(self) -> None:
         for p in (self.share_path, self.upload_path, self.data_path):
