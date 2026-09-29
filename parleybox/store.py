@@ -262,7 +262,152 @@ class VisitorStore:
             online = sum(1 for ts in self._seen.values() if now - ts < self.ONLINE_WINDOW)
             return {"total": self._total, "online": online}
 
+    def reset(self) -> None:
+        """Start counting from nobody: whoever is still aboard is counted
+        again with their next request."""
+        with self._lock:
+            self._seen.clear()
+            self._total = 0
+            self._flush()
+
     def close(self) -> None:
         with self._lock:
             if self._dirty:
                 self._flush()
+
+
+class StatsStore:
+    """Aggregate counts for the Quarterdeck's log book: how many, never who.
+
+    Per day: distinct visitors, most aboard at once, downloads, uploads, chat
+    messages and board posts. Plus download counts per cargo path. Visitor
+    addresses stay in memory only (to count each once a day), so a restart
+    mid-day can count someone twice. Days follow the box's clock, which
+    nothing sets while it is offline.
+    """
+
+    FIELDS = ("visitors", "peak", "downloads", "down_bytes", "uploads", "up_bytes", "chat", "posts")
+    KEEP_DAYS = 90
+    KEEP_FILES = 500
+    FLUSH_EVERY = 30  # seconds; spare the SD card
+
+    def __init__(self, path: Path):
+        self.path = path
+        self._lock = threading.Lock()
+        self._data = self._empty()
+        self._today = ""
+        self._today_ips: set = set()
+        self._flushed = 0.0
+        self._dirty = False
+        if path.exists():
+            try:
+                d = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(d.get("days"), dict) and isinstance(d.get("files"), dict):
+                    self._data.update(d)
+            except (json.JSONDecodeError, OSError, AttributeError):
+                pass
+
+    @staticmethod
+    def _empty() -> dict:
+        return {"since": time.time(), "peak": {"n": 0, "ts": 0}, "days": {}, "files": {}}
+
+    def _day(self, now: float) -> dict:
+        day = time.strftime("%Y-%m-%d", time.localtime(now))
+        if day != self._today:
+            self._today, self._today_ips = day, set()
+        days = self._data["days"]
+        if day not in days:
+            days[day] = dict.fromkeys(self.FIELDS, 0)
+            for old in sorted(days)[:-self.KEEP_DAYS]:
+                del days[old]
+        return days[day]
+
+    def _changed(self, now: float) -> None:
+        self._dirty = True
+        if now - self._flushed >= self.FLUSH_EVERY:
+            self._flush(now)
+
+    def _flush(self, now: float) -> None:
+        try:
+            _atomic_write(self.path, json.dumps(self._data, ensure_ascii=False))
+            self._dirty = False
+        except OSError:
+            pass
+        self._flushed = now
+
+    def add(self, **counts: int) -> None:
+        """Bump today's counters, e.g. add(uploads=1, up_bytes=n)."""
+        with self._lock:
+            now = time.time()
+            b = self._day(now)
+            for k, v in counts.items():
+                b[k] = b.get(k, 0) + v
+            self._changed(now)
+
+    def visit(self, ip: str, aboard: int) -> None:
+        """A request from ip while `aboard` people are aboard."""
+        with self._lock:
+            now = time.time()
+            b = self._day(now)
+            changed = False
+            if ip not in self._today_ips:
+                self._today_ips.add(ip)
+                b["visitors"] = b.get("visitors", 0) + 1
+                changed = True
+            if aboard > b.get("peak", 0):
+                b["peak"] = aboard
+                changed = True
+            if aboard > self._data["peak"]["n"]:
+                self._data["peak"] = {"n": aboard, "ts": now}
+            if changed:
+                self._changed(now)
+
+    def download(self, rel: str, nbytes: int, new: bool) -> None:
+        """Bytes of cargo sent. `new` is a download starting from the top
+        (not a video seeking within one), which is what gets counted."""
+        with self._lock:
+            now = time.time()
+            b = self._day(now)
+            b["down_bytes"] = b.get("down_bytes", 0) + nbytes
+            if new:
+                b["downloads"] = b.get("downloads", 0) + 1
+                files = self._data["files"]
+                files[rel] = files.get(rel, 0) + 1
+                if len(files) > self.KEEP_FILES:
+                    for old in sorted(files, key=files.get)[: len(files) - self.KEEP_FILES]:
+                        del files[old]
+            self._changed(now)
+
+    def forget(self, rel: str) -> None:
+        with self._lock:
+            if self._data["files"].pop(rel, None) is not None:
+                self._changed(time.time())
+
+    def reset(self) -> None:
+        with self._lock:
+            self._data = self._empty()
+            self._today, self._today_ips = "", set()
+            self._flush(time.time())
+
+    def report(self, days: int = 14, top: int = 10) -> dict:
+        with self._lock:
+            all_days = self._data["days"]
+            totals = dict.fromkeys(self.FIELDS, 0)
+            for b in all_days.values():
+                for k in self.FIELDS:
+                    if k != "peak":
+                        totals[k] += b.get(k, 0)
+            totals["peak"] = self._data["peak"]["n"]
+            files = self._data["files"]
+            return {
+                "since": self._data["since"],
+                "peak": dict(self._data["peak"]),
+                "totals": totals,
+                "days": [(d, dict(all_days[d])) for d in sorted(all_days, reverse=True)[:days]],
+                "top": sorted(files.items(), key=lambda kv: (-kv[1], kv[0]))[:top],
+            }
+
+    def close(self) -> None:
+        with self._lock:
+            if self._dirty:
+                self._flush(time.time())

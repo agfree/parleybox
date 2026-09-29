@@ -4,7 +4,7 @@ import time
 import unittest
 from pathlib import Path
 
-from parleybox.store import BoardStore, ChatStore, VisitorStore
+from parleybox.store import BoardStore, ChatStore, StatsStore, VisitorStore
 
 
 class ChatTests(unittest.TestCase):
@@ -72,6 +72,61 @@ class VisitorTests(unittest.TestCase):
             v.close()
             v2 = VisitorStore(Path(d) / "v.json")
             self.assertEqual(v2.stats()["total"], 2)
+            v2.hit("a")
+            v2.reset()
+            self.assertEqual(v2.stats(), {"total": 0, "online": 0})
+            self.assertEqual(VisitorStore(Path(d) / "v.json").stats()["total"], 0)
+            v2.hit("a")
+            self.assertEqual(v2.stats(), {"total": 1, "online": 1})
+
+
+class StatsTests(unittest.TestCase):
+    def test_counts_persist_and_reset(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "stats.json"
+            s = StatsStore(path)
+            s.visit("a", 1); s.visit("a", 1); s.visit("b", 3); s.visit("c", 2)
+            s.download("movie.mp4", 1000, True)
+            s.download("movie.mp4", 500, False)  # seeking: bytes, not a new download
+            s.download("doc.txt", 10, True)
+            s.download("doc.txt", 10, True)
+            s.add(uploads=1, up_bytes=42)
+            s.add(chat=1); s.add(posts=2)
+            r = s.report()
+            t = r["totals"]
+            self.assertEqual((t["visitors"], t["peak"], t["downloads"], t["down_bytes"]), (3, 3, 3, 1520))
+            self.assertEqual((t["uploads"], t["up_bytes"], t["chat"], t["posts"]), (1, 42, 1, 2))
+            self.assertEqual(r["top"], [("doc.txt", 2), ("movie.mp4", 1)])
+            self.assertEqual(len(r["days"]), 1)
+            s.forget("doc.txt")
+            self.assertEqual(s.report()["top"], [("movie.mp4", 1)])
+            s.close()
+            s2 = StatsStore(path)
+            self.assertEqual(s2.report()["totals"]["downloads"], 3)
+            self.assertEqual(s2.report()["peak"]["n"], 3)
+            s2.reset()
+            self.assertEqual(StatsStore(path).report()["totals"]["downloads"], 0)
+
+    def test_old_days_and_files_pruned(self):
+        with tempfile.TemporaryDirectory() as d:
+            s = StatsStore(Path(d) / "stats.json")
+            s.KEEP_FILES = 3
+            for i in range(5):
+                s.download(f"f{i}", 1, True)
+            s.download("f4", 1, True)
+            self.assertEqual(len(s._data["files"]), 3)
+            self.assertIn("f4", s._data["files"])
+            s._data["days"] = {f"2020-01-{i:02d}": {} for i in range(1, 32)}
+            s.KEEP_DAYS = 5
+            s._today = ""
+            s.add(chat=1)
+            self.assertEqual(len(s._data["days"]), 5)
+
+    def test_corrupt_file_ignored(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "stats.json"
+            path.write_text("[1, 2]")
+            self.assertEqual(StatsStore(path).report()["totals"]["downloads"], 0)
 
 
 if __name__ == "__main__":

@@ -407,6 +407,25 @@ class QuarterdeckTests(unittest.TestCase):
         self.post("settings", {"token": tok, "uploads_enabled": "1", "chat_enabled": "1", "board_enabled": "1"})
         self.assertTrue(self.cfg.uploads_enabled)
 
+    def test_log_book_and_resets(self):
+        app = self.server.app
+        (self.cfg.share_path / "chart.txt").write_text("x marks the spot")
+        self.req("GET", "/cargo/chart.txt")
+        self.req("GET", "/cargo/chart.txt", headers={"Range": "bytes=2-5"})  # seeking isn't a new download
+        self.req("HEAD", "/cargo/chart.txt")
+        self.assertEqual(dict(app.stats.report()["top"]).get("chart.txt"), 1)
+        tok, data = self.token()
+        self.assertIn(b"Log book", data)
+        self.assertIn(b"chart.txt", data)
+        self.assertGreaterEqual(app.visitors.stats()["total"], 1)
+        r, _ = self.post("visitors/reset", {"token": tok})
+        self.assertEqual(r.status, 303)
+        self.assertEqual(app.visitors.stats()["total"], 0)
+        r, _ = self.post("stats/reset", {"token": tok})
+        self.assertEqual(app.stats.report()["totals"]["downloads"], 0)
+        r, _ = self.post("stats/reset", {"token": "stale"})
+        self.assertIn("err=1", r.getheader("Location"))
+
     def test_upload_cap_from_quarterdeck(self):
         tok, data = self.token()
         self.assertIn(b'name="max_upload_mb"', data)

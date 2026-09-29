@@ -8,6 +8,7 @@ import mimetypes
 import os
 import secrets
 import shutil
+import signal
 import subprocess
 import time
 from http import HTTPStatus
@@ -18,7 +19,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 from . import pages
 from .config import Config
 from .multipart import MultipartError, MultipartReader, parse_boundary
-from .store import BoardStore, ChatStore, VisitorStore
+from .store import BoardStore, ChatStore, StatsStore, VisitorStore
 from .util import clip, human_size, sanitize_filename, unique_path
 
 log = logging.getLogger("parleybox")
@@ -58,12 +59,21 @@ class App:
         self.board = BoardStore(cfg.data_path / "board.json", self.board_images,
                                 cfg.board_max_threads, cfg.board_max_replies)
         self.visitors = VisitorStore(cfg.data_path / "visitors.json")
+        self.stats = StatsStore(cfg.data_path / "stats.json")
         self.allowed_hosts = {cfg.hostname.lower(), "localhost", *[h.lower() for h in cfg.extra_hosts]}
         self.portal_url = f"http://{cfg.hostname}/"
         self.started = time.time()
         self.secret = secrets.token_bytes(32)
         self.overrides_path = cfg.data_path / "quarterdeck.json"
         self._apply_overrides()
+
+    def hit(self, ip: str) -> None:
+        self.visitors.hit(ip)
+        self.stats.visit(ip, self.visitors.stats()["online"])
+
+    def close(self) -> None:
+        self.visitors.close()
+        self.stats.close()
 
     # -- quarterdeck ------------------------------------------------------
     OVERRIDABLE = ("uploads_enabled", "chat_enabled", "board_enabled", "max_upload_mb", "site_name", "motd")
@@ -278,7 +288,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in CAPTIVE_PATHS or not self.app.host_ok(host):
             self.redirect(self.app.portal_url)
             return
-        self.app.visitors.hit(self._client_ip())
+        self.app.hit(self._client_ip())
         q = self._query()
         try:
             if path == "/":
@@ -328,7 +338,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.app.host_ok(self.headers.get("Host", "")):
             self.redirect(self.app.portal_url)
             return
-        self.app.visitors.hit(self._client_ip())
+        self.app.hit(self._client_ip())
         try:
             if path in ("/parley", "/upload"):
                 self.handle_upload()
@@ -391,7 +401,9 @@ class Handler(BaseHTTPRequestHandler):
                                               q.get("msg", ""), q.get("err") == "1",
                                               self._in_signin_window()))
         else:
-            self.send_file(target, sandbox=True)
+            cargo = str(target.relative_to(os.path.realpath(self.cfg.share_path)))
+            self.send_file(target, sandbox=True,
+                           on_sent=lambda n, new: self.app.stats.download(cargo, n, new))
 
     def serve_file(self, root: Path, rel: str, cache: bool = False, sandbox: bool = False):
         target = self._resolve(root, rel)
@@ -400,8 +412,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_file(target, cache=cache, sandbox=sandbox)
 
-    def send_file(self, path: Path, cache: bool = False, sandbox: bool = False):
-        """Serve a file with single-range support so video seeking works."""
+    def send_file(self, path: Path, cache: bool = False, sandbox: bool = False, on_sent=None):
+        """Serve a file with single-range support so video seeking works.
+        on_sent(bytes, from_the_top) is called once the body is sent (or cut short)."""
         try:
             st = path.stat()
             f = path.open("rb")
@@ -458,12 +471,16 @@ class Handler(BaseHTTPRequestHandler):
                 return
             f.seek(start)
             remaining = length
-            while remaining > 0:
-                chunk = f.read(min(256 * 1024, remaining))
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                remaining -= len(chunk)
+            try:
+                while remaining > 0:
+                    chunk = f.read(min(256 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+            finally:
+                if on_sent:
+                    on_sent(length - remaining, start == 0)
 
     # ------------------------------------------------------------ uploads
     def _multipart(self, max_bytes: int) -> MultipartReader:
@@ -517,6 +534,7 @@ class Handler(BaseHTTPRequestHandler):
                 dest = unique_path(upload_dir, name)
                 os.replace(tmp, dest)
                 saved.append(dest.name)
+                self.app.stats.add(uploads=1, up_bytes=written)
                 log.info("upload %s (%d bytes) from %s", dest.name, written, self._client_ip())
             except Exception:
                 tmp.unlink(missing_ok=True)
@@ -557,6 +575,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             self.send_json({"error": str(e)}, 429)
             return
+        self.app.stats.add(chat=1)
         if self.headers.get("Accept", "").startswith("text/html"):
             self.redirect("/chat", 303)
         else:
@@ -602,12 +621,14 @@ class Handler(BaseHTTPRequestHandler):
         if thread_id is None:
             subject = clip(fields.get("subject", ""), 100) or text[:60]
             t = self.app.board.create(subject, name, text, image)
+            self.app.stats.add(posts=1)
             self.redirect(f"/board/{t['id']}", 303)
         else:
             p = self.app.board.reply(thread_id, name, text, image)
             if p is None:
                 self.error(404, "No such thread.")
                 return
+            self.app.stats.add(posts=1)
             self.redirect(f"/board/{thread_id}#p{p['id']}", 303)
 
     def _save_board_image(self, part) -> str:
@@ -656,6 +677,7 @@ class Handler(BaseHTTPRequestHandler):
         cargo, total = self.app.cargo_index()
         info = self.app.info()
         info["cargo_truncated"] = total > len(cargo)
+        info["report"] = self.app.stats.report()
         self.send_html(pages.quarterdeck(
             self.cfg, info, cargo, self.app.chat.recent(100), self.app.board.threads(),
             self.app.csrf_token(), self._stats(), q.get("msg", ""), q.get("err") == "1",
@@ -677,6 +699,7 @@ class Handler(BaseHTTPRequestHandler):
                 msg, err = "No such cargo.", True
             else:
                 target.unlink()
+                self.app.stats.forget(rel)
                 log.info("quarterdeck: %s thrown overboard by %s", rel, self._client_ip())
                 msg = f"{rel} thrown overboard."
         elif action == "chat/delete":
@@ -701,6 +724,14 @@ class Handler(BaseHTTPRequestHandler):
             }
             self.app.save_overrides(values)
             msg = "Ship's articles updated."
+        elif action == "visitors/reset":
+            self.app.visitors.reset()
+            log.info("quarterdeck: aboard counter reset by %s", self._client_ip())
+            msg = "Aboard counter reset."
+        elif action == "stats/reset":
+            self.app.stats.reset()
+            log.info("quarterdeck: log book cleared by %s", self._client_ip())
+            msg = "Log book cleared."
         elif action in ("ssh/open", "ssh/close"):
             msg, err = self._maintenance_ssh(action == "ssh/open")
         else:
@@ -731,8 +762,14 @@ def make_server(cfg: Config, dev: bool = False) -> ThreadingHTTPServer:
     return server
 
 
+def _stop(signum, frame):
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)  # a second one mustn't cut the save short
+    raise KeyboardInterrupt
+
+
 def serve_forever(cfg: Config, dev: bool = False) -> None:
     server = make_server(cfg, dev)
+    signal.signal(signal.SIGTERM, _stop)  # systemctl stop: save the counters on the way out
     log.info("ParleyBox %s listening on http://%s:%d/ (share=%s data=%s)",
              "dev" if dev else "", cfg.listen, cfg.port, cfg.share_path, cfg.data_path)
     try:
@@ -740,5 +777,5 @@ def serve_forever(cfg: Config, dev: bool = False) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        server.app.visitors.close()  # type: ignore[attr-defined]
+        server.app.close()  # type: ignore[attr-defined]
         server.server_close()

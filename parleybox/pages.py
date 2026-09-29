@@ -349,6 +349,42 @@ def _ssh_panel(ssh: dict, token: str) -> str:
     return f'<div class="panel">\n<h2>Maintenance</h2>\n{body}\n</div>\n'
 
 
+def _log_book(report: dict, token: str) -> str:
+    """The Quarterdeck's statistics panel."""
+    t = report["totals"]
+    peak = report["peak"]
+    peak_txt = f'{peak["n"]} aboard at once, {fmt_time(peak["ts"])}' if peak["n"] else "nobody yet"
+    rows = "".join(
+        f'<tr><td>{esc(day)}</td><td class="size">{b.get("visitors", 0)}</td><td class="size">{b.get("peak", 0)}</td>'
+        f'<td class="size">{b.get("downloads", 0)} &middot; {human_size(b.get("down_bytes", 0))}</td>'
+        f'<td class="size">{b.get("uploads", 0)} &middot; {human_size(b.get("up_bytes", 0))}</td>'
+        f'<td class="size">{b.get("chat", 0)}</td><td class="size">{b.get("posts", 0)}</td></tr>'
+        for day, b in report["days"]
+    ) or '<tr><td colspan="7" class="dim">Nothing logged yet.</td></tr>'
+    top = "".join(
+        f'<tr><td><a href="/cargo/{quote(rel)}">{esc(rel)}</a></td><td class="size">{n}</td></tr>'
+        for rel, n in report["top"]
+    ) or '<tr><td colspan="2" class="dim">No cargo taken yet.</td></tr>'
+    return f"""
+<div class="panel">
+<h2>Log book</h2>
+<p>Since {fmt_time(report["since"])}: <b>{t["visitors"]}</b> visits (each person counted once a day), most aboard: {esc(peak_txt)};
+<b>{t["downloads"]}</b> downloads ({human_size(t["down_bytes"])} sent), <b>{t["uploads"]}</b> parleys
+({human_size(t["up_bytes"])} brought aboard), <b>{t["chat"]}</b> chat messages, <b>{t["posts"]}</b> board posts.</p>
+<div class="scroll"><table class="files">
+<tr><th>Day</th><th>Visitors</th><th>Most aboard</th><th>Downloads</th><th>Parleys</th><th>Chat</th><th>Posts</th></tr>
+{rows}
+</table></div>
+<h3>Most taken cargo</h3>
+<table class="files"><tr><th>Path</th><th>Downloads</th></tr>{top}</table>
+<p class="dim small">Counts only, never who. Visitors are counted once a day by address, kept in memory.
+Days follow the box&#39;s own clock, which nothing sets while it is offline, so dates can be off.</p>
+<p>{_btn("/quarterdeck/visitors/reset", token, "Reset aboard counter", {}, confirm="Reset the aboard counter to zero?")}
+{_btn("/quarterdeck/stats/reset", token, "Clear the log book", {}, confirm="Clear every statistic in the log book?")}</p>
+</div>
+"""
+
+
 def quarterdeck(cfg, info: dict, cargo: list, chat: list, threads: list, token: str,
                 stats: dict, msg: str = "", error: bool = False, ssh: dict | None = None) -> str:
     disk = info["disk"]
@@ -435,6 +471,7 @@ def quarterdeck(cfg, info: dict, cargo: list, chat: list, threads: list, token: 
 <p class="dim small">Captain's station. Everything here is destructive and immediate.</p>
 {_flash(msg, error)}
 <div class="qd-stats">{tiles}</div>
+{_log_book(info["report"], token) if info.get("report") else ""}
 {settings}
 {cargo_html}
 {chat_html}

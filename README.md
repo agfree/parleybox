@@ -39,7 +39,9 @@ a Raspberry Pi (or any Debian box) with a Wi-Fi adapter that supports AP mode.
 - **Aboard counter**: how many people are aboard now and how many have ever come aboard.
 - **Quarterdeck** (`/quarterdeck`): the captain's page. Throw cargo overboard, delete chat
   messages or board posts, switch uploads/chat/board on and off, set the upload cap, rename the ship and edit the
-  message of the day, all from a phone. Off and hidden until `quarterdeck_password` is set.
+  message of the day, all from a phone. Its **log book** keeps aggregate statistics (visitors
+  and most aboard per day, downloads and the most-taken cargo, parleys, chat and board activity),
+  counts only, never who. The aboard counter and the log book can each be reset from there. Off and hidden until `quarterdeck_password` is set.
   It can also open SSH for an hour of maintenance, so SSH can stay closed the rest of the time.
 - **Zero dependencies**: Python 3.11+ standard library only. No pip, no database, no CDN,
   no JavaScript frameworks. Everything is served from the box.

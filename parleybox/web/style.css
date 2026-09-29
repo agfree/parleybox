@@ -116,3 +116,4 @@ button.danger:hover { background: #ff7b7b; }
 code { background: var(--bg); border: 1px solid var(--border); padding: 0 4px; }
 .toggles input { margin-right: 6px; }
 table.files td.act { text-align: right; white-space: nowrap; }
+.scroll { overflow-x: auto; }
