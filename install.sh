@@ -68,6 +68,16 @@ DHCP_END=$NET.250
 
 say() { printf '\033[1;33m>> %s\033[0m\n' "$*"; }
 
+# Is anyone logged in over SSH through $IFACE (whose addresses we are about to
+# flush)? True when an established sshd connection has a local address on it.
+over_the_air() {
+  local addrs
+  addrs=$(ip -o addr show dev "$IFACE" 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4}')
+  [ -n "$addrs" ] || return 1
+  ss -Htnp state established 2>/dev/null | grep '"sshd' | awk '{print $3}' |
+    sed -e 's/:[0-9]*$//' -e 's/^\[//' -e 's/\]$//' -e 's/%.*//' -e 's/^::ffff://' | grep -qxF "$addrs"
+}
+
 say "Installing packages"
 export DEBIAN_FRONTEND=noninteractive
 PKGS="python3"
@@ -130,6 +140,33 @@ elif [ $NETWORK -eq 1 ]; then
     sed "s|wlan0|$IFACE|g" "$SRC/etc/$u.service" > "/etc/systemd/system/$u.service"
   done
   mkdir -p /var/lib/parleybox
+
+  # Installing over SSH on the Wi-Fi we are about to take? The session freezes
+  # the moment $IFACE changes hands, and the box is already broadcasting by the
+  # time anyone notices. Say so first, and make sure the install finishes (and
+  # leaves a log) when the terminal goes away.
+  if over_the_air; then
+    LOG=/var/log/parleybox-install.log
+    printf '\n\033[1;37;41m %s \033[0m\n' "HEADS UP: this SSH session runs over $IFACE and is about to freeze."
+    cat <<EOF
+
+  That is expected. The install carries on by itself on the box, and within a
+  minute the Wi-Fi comes back as the open network:
+
+      $SSID
+
+  Join it and open  http://$HOSTNAME_PORTAL/  (or http://$IP/).
+  To get your terminal back, press Enter, then ~ then .   (closes the frozen SSH session)
+  The rest of this install is logged to $LOG on the box.
+
+EOF
+    if [ -t 0 ]; then
+      for n in 10 9 8 7 6 5 4 3 2 1; do printf '\r  Handing over in %2ds (Ctrl-C to stop here) ' "$n"; sleep 1; done
+      echo
+    fi
+    trap '' HUP PIPE
+    exec > >(tee --output-error=warn -a "$LOG") 2>&1
+  fi
 
   say "Handing $IFACE over to ParleyBox"
   # NetworkManager (Raspberry Pi OS bookworm+): stop managing the interface

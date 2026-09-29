@@ -69,6 +69,10 @@ The installer:
    `parleybox-net` (static IP), `parleybox-hostapd`, `parleybox-dnsmasq`, `parleybox` (web).
 
 **The Wi-Fi interface becomes the access point**, so manage the Pi over Ethernet or a second adapter.
+If you run the installer over SSH on that same Wi-Fi, it warns you and counts down before
+taking the interface. Your session then freezes, which is expected. The install finishes on
+its own (logged to `/var/log/parleybox-install.log`), and the box comes back as the open network.
+Press Enter, `~`, `.` to close the frozen session, then join the new network.
 Use `--no-network` to install only the web server (for example to serve it on your LAN).
 
 Shared files live in `/srv/parleybox/share`; uploads go to `/srv/parleybox/share/uploads`.
